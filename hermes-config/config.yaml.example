@@ -1,0 +1,86 @@
+# ~/.hermes/config.yaml 에 병합할 mcp_servers 블록.
+# 스키마는 hermes-agent 공식 문서로 확인함:
+# https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md
+# (stdio: command/args/env, http: url/headers, 공통: enabled/timeout/tools.include|exclude — 글롭 지원)
+#
+# 각 서버의 command/args 경로(D:\hermes-projects\vendor\...)는 실제 설치 위치에 맞게 바꾼다.
+# vendor/README.md 에 각 MCP의 클론 시점과 소스가 정리되어 있다.
+
+mcp_servers:
+  # 2D 작도 전담. daobataotie/CAD-MCP — 원본 10개 도구 중 9개만 노출.
+  # process_command는 자연어 명령을 내부에서 비동기 SendCommand로 처리해 레이스가 나서 차단한다.
+  acad2d:
+    command: "python"
+    args: ["D:\\hermes-projects\\vendor\\CAD-MCP\\src\\server.py"]
+    tools:
+      exclude: ["process_command"]
+
+  # CAD-MCP가 못 하는 조회·수정·캡처·내보내기·승인 게이트. mcp-acad-assist/ (이 리포에서 신규 구현).
+  # `pip install -e mcp-acad-assist` 로 설치하면 콘솔 스크립트 acad-assist가 PATH에 등록된다.
+  acad-assist:
+    command: "acad-assist"
+
+  # 3D 모델링. mhyrr/sketchup-mcp — PyPI 패키지를 uvx로 바로 실행.
+  # 사전 조건: SketchUp Pro에서 Extensions > SketchupMCP > Start Server (기본 TCP 9876).
+  sketchup:
+    command: "uvx"
+    args: ["sketchup-mcp"]
+
+  # 렌더. cl0nazepamm/3dsmax-mcp — 네이티브 C++ 브리지, uv로 실행.
+  # 원본 151개(core 87) 중 조회·오브젝트·재질·뷰포트·외부파일·스크립팅 카테고리만 ~24개로 제한.
+  # 실제 설치 후 `hermes mcp` 로 전체 도구명을 다시 확인해 이 목록을 보정한다 (Stage 5).
+  max3d:
+    command: "uv"
+    args: ["run", "--directory", "D:\\hermes-projects\\vendor\\3dsmax-mcp", "3dsmax-mcp"]
+    tools:
+      include:
+        # 브리지 상태 / 씬 조회
+        - "get_bridge_status"
+        - "get_session_context"
+        - "query_scene"
+        - "get_hierarchy"
+        - "get_object_properties"
+        # 오브젝트 조작
+        - "create_object"
+        - "delete_objects"
+        - "set_object_property"
+        - "transform_object"
+        - "clone_objects"
+        - "select_objects"
+        - "set_visibility"
+        # 재질
+        - "get_materials"
+        - "assign_material"
+        - "set_material_property"
+        - "set_material_properties"
+        - "create_material_from_textures"
+        - "smart_import"
+        # 뷰포트 / 렌더
+        - "capture_viewport"
+        - "capture_multi_view"
+        - "render_scene"
+        # 외부 .max 파일
+        - "inspect_max_file"
+        - "merge_from_file"
+        # 스크립팅 (템플릿 없는 경우의 탈출구)
+        - "execute_maxscript"
+
+  # 일정. nspady/google-calendar-mcp — npx로 실행, OAuth 자격증명 필요(env.example 참고).
+  # ENABLED_TOOLS는 이 서버 자체의 필터(선택) — Hermes의 tools.include와 별개로 존재한다.
+  calendar:
+    command: "npx"
+    args: ["@cocal/google-calendar-mcp"]
+    env:
+      GOOGLE_OAUTH_CREDENTIALS: "D:\\hermes-projects\\secrets\\gcp-oauth.keys.json"
+    tools:
+      exclude: ["manage-accounts"]  # 폰/워치 흐름에서 계정 관리는 불필요
+
+# API 서버 설정은 .env 우선이지만 config.yaml에도 둘 수 있다 (env가 항상 이긴다).
+# env.example 을 이미 채웠다면 이 블록은 생략해도 된다.
+# gateway:
+#   api_server:
+#     enabled: true
+#     port: 8642
+#     host: 0.0.0.0
+#     key: change-me-generate-a-long-random-string
+#     max_concurrent_runs: 10   # 0이면 무제한. 렌더처럼 오래 걸리는 run이 겹치면 올린다.

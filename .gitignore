@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+android/**/build/
+android/.idea/
+android/*.iml
+android/**/*.iml
+android/captures/
+android/.cxx/
+
+# Env / secrets
+.env
+hermes-config/config.yaml
+hermes-config/.env
+
+# OS
+.DS_Store
