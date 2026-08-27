@@ -7,6 +7,7 @@ import com.hermes.shared.DataLayerPaths
 import com.hermes.shared.HermesJson
 import com.hermes.shared.HermesRequest
 import com.hermes.shared.HermesResponse
+import com.hermes.shared.HermesStatus
 import com.hermes.shared.WatchPreamble
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,12 @@ class WatchRelayListenerService : WearableListenerService() {
     }
 
     private suspend fun handleRequest(nodeId: String, request: HermesRequest) {
+        // 폰이 STATUS를 한 번도 안 보내던 결함 — 워치의 "처리 중" 표시가 도달 불가했다.
+        // sendChat이 비스트리밍 블로킹 호출이라(실측 캘린더 등록 1건 17초, 다단계는 더
+        // 걸림) 중간 진행률은 없지만, 최소한 "요청을 받아 처리 시작했다"는 사실은
+        // 응답을 기다리는 동안 워치에 보여줘야 한다.
+        sendStatusToNode(nodeId, HermesStatus(reqId = request.reqId, stage = "processing", label = "처리 중..."))
+
         val settingsStore = SettingsStore(applicationContext)
         val settings = settingsStore.snapshot()
         val client = HermesApiClient(
@@ -61,5 +68,11 @@ class WatchRelayListenerService : WearableListenerService() {
         val payload = HermesJson.encodeToString(HermesResponse.serializer(), response)
             .toByteArray(Charsets.UTF_8)
         Wearable.getMessageClient(applicationContext).sendMessage(nodeId, DataLayerPaths.RESPONSE, payload)
+    }
+
+    private fun sendStatusToNode(nodeId: String, status: HermesStatus) {
+        val payload = HermesJson.encodeToString(HermesStatus.serializer(), status)
+            .toByteArray(Charsets.UTF_8)
+        Wearable.getMessageClient(applicationContext).sendMessage(nodeId, DataLayerPaths.STATUS, payload)
     }
 }
