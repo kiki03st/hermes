@@ -3,7 +3,7 @@
 # https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md
 # (stdio: command/args/env, http: url/headers, 공통: enabled/timeout/tools.include|exclude — 글롭 지원)
 #
-# 각 서버의 command/args 경로(D:\hermes-projects\vendor\...)는 실제 설치 위치에 맞게 바꾼다.
+# 각 서버의 command/args 경로(C:\hermes-projects\vendor\...)는 실제 설치 위치에 맞게 바꾼다.
 # vendor/README.md 에 각 MCP의 클론 시점과 소스가 정리되어 있다.
 
 mcp_servers:
@@ -11,7 +11,7 @@ mcp_servers:
   # process_command는 자연어 명령을 내부에서 비동기 SendCommand로 처리해 레이스가 나서 차단한다.
   acad2d:
     command: "python"
-    args: ["D:\\hermes-projects\\vendor\\CAD-MCP\\src\\server.py"]
+    args: ["C:\\hermes-projects\\vendor\\CAD-MCP\\src\\server.py"]
     tools:
       exclude: ["process_command"]
 
@@ -31,7 +31,7 @@ mcp_servers:
   # 실제 설치 후 `hermes mcp` 로 전체 도구명을 다시 확인해 이 목록을 보정한다 (Stage 5).
   max3d:
     command: "uv"
-    args: ["run", "--directory", "D:\\hermes-projects\\vendor\\3dsmax-mcp", "3dsmax-mcp"]
+    args: ["run", "--directory", "C:\\hermes-projects\\vendor\\3dsmax-mcp", "3dsmax-mcp"]
     tools:
       include:
         # 브리지 상태 / 씬 조회
@@ -67,11 +67,20 @@ mcp_servers:
 
   # 일정. nspady/google-calendar-mcp — npx로 실행, OAuth 자격증명 필요(env.example 참고).
   # ENABLED_TOOLS는 이 서버 자체의 필터(선택) — Hermes의 tools.include와 별개로 존재한다.
+  #
+  # Windows 주의 (2026-08-28 실측): command를 `npx`로 두면 실패한다. Hermes는 MCP stdio 서버를
+  # 셸 없이 subprocess로 띄우고, Windows의 subprocess는 PATHEXT를 적용하지 않아 확장자 없는
+  # `npx`를 찾지 못한다:
+  #     npx      -> FileNotFoundError: [WinError 2] 지정된 파일을 찾을 수 없습니다
+  #     npx.cmd  -> OK
+  # 그래서 Windows에서는 반드시 `npx.cmd`. `-y`는 최초 실행 시 설치 확인 프롬프트를 건너뛰기
+  # 위한 것으로, TTY가 없는 게이트웨이 환경에서 멈추지 않게 한다.
+  # (Linux/macOS에서는 `npx`, args는 `["-y", ...]` 그대로 두면 된다.)
   calendar:
-    command: "npx"
-    args: ["@cocal/google-calendar-mcp"]
+    command: "npx.cmd"
+    args: ["-y", "@cocal/google-calendar-mcp"]
     env:
-      GOOGLE_OAUTH_CREDENTIALS: "D:\\hermes-projects\\secrets\\gcp-oauth.keys.json"
+      GOOGLE_OAUTH_CREDENTIALS: "C:\\hermes-projects\\secrets\\gcp-oauth.keys.json"
     tools:
       exclude: ["manage-accounts"]  # 폰/워치 흐름에서 계정 관리는 불필요
 

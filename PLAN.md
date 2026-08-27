@@ -84,7 +84,7 @@ V-Ray는 3ds Max 안에서 도는 렌더러 플러그인이다. `execute_maxscri
 
 ```maxscript
 renderers.current = V_Ray()
-rendOutputFilename = @"D:\projects\room01\03-render\persp_4k.png"
+rendOutputFilename = @"C:\hermes-projects\room01\03-render\persp_4k.png"
 rendSaveFile = true
 render vfb:false outputSize:[3840,2160]
 ```
@@ -133,7 +133,7 @@ render vfb:false outputSize:[3840,2160]
 MCP끼리 직접 대화하지 않는다. **약속된 폴더 구조로 파일을 넘긴다.** 이 규약을 Hermes 영구 메모리에 심고 스킬에 박아둔다.
 
 ```
-D:\hermes-projects\<project>\
+C:\hermes-projects\<project>\
 ├─ 01-cad\      plan.dwg          AutoCAD 산출물
 ├─ 02-model\    model.skp
 │               model.fbx         3ds Max로 넘길 때

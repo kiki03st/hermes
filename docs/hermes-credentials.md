@@ -11,8 +11,8 @@ Hermes는 시크릿과 일반 설정을 파일로 분리한다.
 
 | 종류 | 파일 |
 |---|---|
-| API 키·토큰 (시크릿) | `~/.hermes/.env` |
-| 모델 선택·도구 설정 등 (비시크릿) | `~/.hermes/config.yaml` |
+| API 키·토큰 (시크릿) | `~/.hermes/.env` (Windows: `%LOCALAPPDATA%\hermes\.env`) |
+| 모델 선택·도구 설정 등 (비시크릿) | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) |
 
 **직접 파일을 열어 편집해도 되지만, 아래 CLI를 쓰면 어느 파일에 넣을지 Hermes가 알아서 정확히
 분류해서 써준다 — 오타로 잘못된 파일에 넣는 실수를 줄인다:**

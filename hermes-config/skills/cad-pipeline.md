@@ -11,7 +11,7 @@ description: 도면(AutoCAD) → 모델(SketchUp Pro) → 렌더(3ds Max + V-Ray
 ## 폴더 규약 (모든 단계가 공유하는 접합부)
 
 ```
-D:\hermes-projects\<project>\
+C:\hermes-projects\<project>\
 ├─ 01-cad\      plan.dwg
 ├─ 02-model\    model.skp / model.fbx
 ├─ 03-render\   persp_4k.png
@@ -41,7 +41,7 @@ MCP끼리 직접 대화하지 않는다. 각 단계는 자기 산출물 경로�
 - 렌더-투-파일·렌더러 선택은 `render_scene`으로 안 되고 `execute_maxscript` 경유:
   ```maxscript
   renderers.current = V_Ray()
-  rendOutputFilename = @"D:\hermes-projects\<project>\03-render\persp_4k.png"
+  rendOutputFilename = @"C:\hermes-projects\<project>\03-render\persp_4k.png"
   rendSaveFile = true
   render vfb:false outputSize:[3840,2160]
   ```

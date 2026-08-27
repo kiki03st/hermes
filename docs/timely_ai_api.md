@@ -20,7 +20,7 @@ Timely에는 **두 개의 API 경로**가 있고, Hermes에 붙는 건 두 번�
 hermes config set model.provider custom
 hermes config set model.base_url https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai
 hermes config set model.default "anthropic/claude-haiku-4.5"
-hermes config set model.api_key sdk_live_...
+hermes config set model.api_key tgpt_sk_...      # 실측 형식 (72자)
 ```
 
 > **2026-08-27 실측 정정**: 아래 초안 원래는 `hermes config set OPENAI_API_KEY ...`로 되어 있었는데, 실제로 Hermes Agent v0.20.6 소스(`agent/credential_pool.py`의 `_seed_custom_pool`)를 확인한 결과 `model.provider == "custom"`일 때는 `OPENAI_API_KEY` 환경변수를 전혀 읽지 않고 `config.yaml`의 `model.api_key`(또는 `custom_providers[].api_key`)만 본다. `OPENAI_API_KEY`로 넣으면 `hermes`가 `HTTP 401: 유효하지 않은 API 키입니다`를 낸다 — 반드시 `model.api_key`로 넣을 것. §2 저장 위치 표도 참고.
@@ -90,6 +90,28 @@ OpenRouter를 Timely 크레딧으로 결제해 쓰는 패스스루입니다. 기
 
 ## 2. Hermes 설치
 
+### Windows (현재 작업 환경)
+
+```powershell
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+```
+
+> **정정 (2026-08-28):** 이 문서의 이전 판은 "Windows 네이티브 미지원 → WSL2에서 실행"이라고
+> 적고 있었는데 **틀렸다**. `install.ps1`은 실재하고(HTTP 200, 239 KB, 헤더가
+> `# Hermes Agent Installer for Windows`) 이 PC에서 실제로 네이티브 설치에 성공했다.
+> WSL2였다면 `mcp-acad-assist`의 pywin32 COM이 Windows 호스트의 AutoCAD에 닿지 못해
+> Stage 3 아키텍처를 갈아야 했다 — 그럴 필요 없다.
+
+- 스크립트가 uv, Python 3.11, git 클론, venv, 전역 `hermes` 명령까지 전부 처리한다.
+- 설치 위치·설정 위치는 **`%LOCALAPPDATA%\hermes`** (= `C:\Users\<사용자>\AppData\Local\hermes`).
+  유닉스의 `~/.hermes`가 아니다 — 설치 스크립트가 `HERMES_HOME` 사용자 환경변수를 이 값으로 심는다.
+  따라서 설정 파일의 실제 경로는 `%LOCALAPPDATA%\hermes\config.yaml`, 환경변수 파일은
+  같은 폴더의 `.env`다.
+- 대화형 설정 마법사가 설치 직후 자동 실행된다. 비대화형(스크립트/에이전트) 환경에서는
+  `-SkipSetup` 플래그로 건너뛰고 §3의 `hermes config set` 4줄로 설정하면 된다.
+
+### Linux / macOS
+
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh
 less install.sh          # 내용 확인
@@ -98,8 +120,7 @@ source ~/.bashrc         # 또는 ~/.zshrc
 ```
 
 - 스크립트가 uv, Python 3.11, Node.js, ripgrep, ffmpeg까지 챙깁니다.
-- **Windows 네이티브 미지원** → WSL2에서 실행
-- Linux / macOS / WSL2 지원
+- 설정 위치는 `~/.hermes/`.
 - 라이선스 MIT
 
 설치 직후 설정 마법사가 자동 실행됩니다. 언제든 `hermes setup`으로 재실행 가능합니다.
@@ -116,7 +137,7 @@ source ~/.bashrc         # 또는 ~/.zshrc
 |---|---|
 | 모델 프로바이더 | **커스텀 OpenAI 호환 엔드포인트** (Nous Portal / OpenRouter 아님) |
 | Base URL | `https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai` |
-| API Key | Timely 키 (`sdk_live_...`) |
+| API Key | Timely 키 (**실제 형식 `tgpt_sk_...`, 72자** — 실측 2026-08-28. 문서 원안의 `sdk_live_...`는 옛 표기) |
 | 모델명 | `anthropic/claude-haiku-4.5` |
 | 컨텍스트 길이 | 자동 감지 |
 | 최대 반복 횟수 | **15~20** (기본 60에서 낮출 것 — §5 참고) |
@@ -292,6 +313,8 @@ hermes
 - [x] §0 툴 콜링 curl 검증 통과 (2026-08-27, `finish_reason: tool_calls`로 `get_weather` 실호출 확인)
 - [x] Hermes 설치 및 `hermes` 명령 인식 확인 (v0.20.6, kiki-server)
 - [x] `model.provider = custom`, base URL, 모델명, API 키(`model.api_key`) 설정
+- [x] **(2026-08-28, Windows)** 같은 4줄로 Windows PC에서도 재현 — `hermes gateway`의
+      `/v1/chat/completions`로 산술·파일읽기 툴콜·캘린더 생성까지 실왕복 확인
 - [x] 최대 반복 횟수 20으로 하향 (`agent.max_turns`, 이 버전 기본값은 500 — 문서 작성 당시 "기본 60"과 다름)
 - [x] `hermes -z`에서 파일 읽기 작업으로 툴 호출 확인 (PLAN.md 실제 요약 성공)
 - [x] 작업 1건당 대략적 호출/크레딧 소모량 실측 (2026-08-27, `--usage-file`로 3건 측정)
