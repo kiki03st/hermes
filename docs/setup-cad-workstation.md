@@ -6,6 +6,9 @@
 > Android의 JUnit — 전부 통과 확인됨), **COM/Ruby/MAXScript가 실제 앱과 맞물리는 부분은
 > 여기서 한 번도 실행해본 적이 없다.** "빌드가 통과한다"와 "기능이 된다"는 다른 말이다 —
 > `windows-migration.md`가 Stage 0 이관 때 이미 강조한 원칙을 여기서도 그대로 지킨다.
+>
+> "MCP 연결"이 개념적으로 뭘 뜻하는지부터 보고 싶으면 [`connecting-mcps.md`](./connecting-mcps.md)를
+> 먼저 읽을 것 — 이 문서(§1~5)는 그 절차를 CAD 3종 관점에서 더 자세히 푼 것이다.
 
 ## 0. 시작하기 전에
 
