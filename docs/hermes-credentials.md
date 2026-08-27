@@ -153,6 +153,30 @@ PLAN.md의 MVP 합격선("워치에 말하면 구글 캘린더에 일정이 들�
 작동한다 — 이 스텝을 빼먹으면 캘린더 도구 호출이 `-32600` 에러로 실패한다 (google-calendar-mcp
 README에 명시된 알려진 증상).
 
+**2026-08-28 실측 (kiki-server, 헤드리스 Ubuntu)**: OAuth 클라이언트의 `client_secret`은
+**생성 시점에만** Google Cloud Console에서 다운로드 가능하다 — 기존에 만들어둔 클라이언트는
+나중에 재다운로드가 안 되므로(Google 정책), 없으면 새로 Desktop app 타입 클라이언트를 만들거나
+"Reset secret"으로 재발급받아야 한다. `gcp-oauth.keys.json`은 최상위 키가 `"installed"`여야
+하고(`"web"`이면 잘못된 타입), `client_id`는 `.apps.googleusercontent.com`, `client_secret`은
+보통 `GOCSPX-`로 시작한다.
+
+**브라우저가 없는 헤드리스 서버에서 OAuth 완료하는 법** (Windows PC에는 해당 없음 — 실제
+브라우저가 있으므로 이 우회가 필요 없다. 이 서버에서 Hermes를 테스트할 때만 참고):
+
+1. `GOOGLE_OAUTH_CREDENTIALS=<경로> npx -y @cocal/google-calendar-mcp auth` 를 서버에서 실행
+   → `🔗 Authentication URL: https://accounts.google.com/...&redirect_uri=http://localhost:3500/oauth2callback`
+   형태의 URL을 출력하고, 로컬 3500 포트에서 콜백을 기다리며 대기한다.
+2. 다른 터미널에서 **SSH 포트포워딩을 추가해** 같은 서버에 재접속:
+   `ssh -L 3500:localhost:3500 <평소 접속 명령 그대로>` (기존 SSH 접속 포트 옵션과는 독립적 —
+   `-p`로 지정하는 SSH 접속 포트와 `-L`의 포워딩 포트는 별개다)
+3. 터널이 연결된 채로 1번에서 받은 긴 `accounts.google.com` URL을 **본인 컴퓨터 브라우저**에서
+   열고 로그인·동의 완료 → 마지막 리다이렉트(`localhost:3500/...`)가 터널을 타고 서버의 인증
+   서버로 전달되며 완료된다. 터널 없이 URL만 열면 마지막 리다이렉트 단계에서 실패한다.
+4. 성공 시 `Tokens saved successfully ... Authentication completed successfully!`가 뜨고
+   `~/.config/google-calendar-mcp/tokens.json`이 생성된다.
+5. `hermes -z "내일 오후 3시에 치과 예약 일정을 구글 캘린더에 30분짜리로 등록해줘."`로
+   실제 이벤트 생성까지 end-to-end 검증 완료 (PLAN.md MVP 합격선).
+
 ---
 
 ## 6. 아직 필요 없음 — CAD 3종 (Stage 3~5)

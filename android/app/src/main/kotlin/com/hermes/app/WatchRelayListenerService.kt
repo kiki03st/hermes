@@ -31,14 +31,19 @@ class WatchRelayListenerService : WearableListenerService() {
     }
 
     private suspend fun handleRequest(nodeId: String, request: HermesRequest) {
-        val settings = SettingsStore(applicationContext).snapshot()
+        val settingsStore = SettingsStore(applicationContext)
+        val settings = settingsStore.snapshot()
         val client = HermesApiClient(
             transport = UrlConnectionHttpTransport(),
             serverUrl = { settings.serverUrl },
             apiKey = { settings.apiKey },
         )
 
-        val outcome = client.sendChat(WatchPreamble.wrap(request.text))
+        // 워치 명령은 (PLAN.md 설계상) 매번 독립된 단발성 지시라 session_id는 안 쓰지만,
+        // "치과 예약 잡아준 사람이 누구인지" 같은 장기 기억은 폰 앱과 동일한 스코프를 써서
+        // 계속 이어지게 한다.
+        val longTermMemoryKey = settingsStore.getOrCreateLongTermMemoryKey()
+        val outcome = client.sendChat(WatchPreamble.wrap(request.text), sessionKey = longTermMemoryKey)
 
         val response = when (outcome) {
             is ChatOutcome.Success -> HermesResponse(reqId = request.reqId, ok = true, text = outcome.text)

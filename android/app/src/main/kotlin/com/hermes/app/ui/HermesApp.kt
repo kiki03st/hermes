@@ -28,6 +28,7 @@ import com.hermes.app.ChatOutcome
 import com.hermes.app.HermesApiClient
 import com.hermes.app.SettingsStore
 import com.hermes.app.UrlConnectionHttpTransport
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +47,19 @@ fun HermesApp(settingsStore: SettingsStore) {
     var chatInput by remember { mutableStateOf("") }
     var chatOutput by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+
+    // Hermes의 /v1/chat/completions는 기본이 stateless라 X-Hermes-Session-Id를 매번
+    // 같은 값으로 보내야 서버가 이전 턴을 이어서 기억한다 (헤더가 없으면 매 호출이
+    // 서버 입장에서 완전히 새 대화). "새 대화" 버튼으로만 갱신되어 화면 재구성에는
+    // 안 바뀌도록 remember로 고정한다.
+    var sessionId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+
+    // "새 대화"로도 안 바뀌는 기기 영구 키 (X-Hermes-Session-Key) — Hermes의 memory
+    // 도구가 쌓아온 장기 기억은 대화창 리셋과 무관하게 계속 이어져야 한다.
+    var longTermMemoryKey by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        longTermMemoryKey = settingsStore.getOrCreateLongTermMemoryKey()
+    }
 
     LaunchedEffect(settings) {
         settings?.let {
@@ -100,7 +114,18 @@ fun HermesApp(settingsStore: SettingsStore) {
 
         HorizontalDivider()
 
-        Text("채팅 (Stage 1: 비스트리밍)", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("채팅 (Stage 1: 비스트리밍)", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = {
+                sessionId = UUID.randomUUID().toString()
+                chatOutput = ""
+            }) {
+                Text("새 대화")
+            }
+        }
         OutlinedTextField(
             value = chatInput,
             onValueChange = { chatInput = it },
@@ -113,7 +138,9 @@ fun HermesApp(settingsStore: SettingsStore) {
                 val text = chatInput
                 sending = true
                 scope.launch {
-                    val outcome = withContext(Dispatchers.IO) { client().sendChat(text) }
+                    val outcome = withContext(Dispatchers.IO) {
+                        client().sendChat(text, sessionId = sessionId, sessionKey = longTermMemoryKey.ifBlank { null })
+                    }
                     chatOutput = when (outcome) {
                         is ChatOutcome.Success -> outcome.text
                         is ChatOutcome.Failure -> "에러 (${outcome.statusCode}): ${outcome.message}"

@@ -78,6 +78,22 @@ class HermesApiClientTest {
     }
 
     @Test
+    fun `sendChat attaches session key header independently of session id`() {
+        val transport = FakeHttpTransport(postResult = HttpResult(200, """{"choices":[]}"""))
+        val client = HermesApiClient(transport, serverUrl = { "http://host:8642" }, apiKey = { "k" })
+
+        // 세션 키만 (대화창 리셋과 무관한 장기 기억 스코프)
+        client.sendChat("hello", sessionId = null, sessionKey = "device-abc")
+        assertEquals(false, transport.lastPostHeaders.containsKey("X-Hermes-Session-Id"))
+        assertEquals("device-abc", transport.lastPostHeaders["X-Hermes-Session-Key"])
+
+        // 세션 ID와 세션 키를 동시에 (지금 대화 + 장기 기억 둘 다)
+        client.sendChat("hello", sessionId = "transcript-alpha", sessionKey = "device-abc")
+        assertEquals("transcript-alpha", transport.lastPostHeaders["X-Hermes-Session-Id"])
+        assertEquals("device-abc", transport.lastPostHeaders["X-Hermes-Session-Key"])
+    }
+
+    @Test
     fun `sendChat surfaces failure when server responds with error status`() {
         val transport = FakeHttpTransport(postResult = HttpResult(429, "Too many concurrent runs"))
         val client = HermesApiClient(transport, serverUrl = { "http://host:8642" }, apiKey = { "k" })
