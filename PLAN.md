@@ -64,10 +64,10 @@
 
 | 단계 | MCP | 방식 | 판정 |
 |---|---|---|---|
-| 2D 작도 | [`daobataotie/CAD-MCP`](https://github.com/daobataotie/CAD-MCP) **MIT** | pywin32 COM | 채택. `draw_line`·`draw_circle`·`draw_arc`·`draw_polyline`·`draw_rectangle`·`draw_text`·`draw_hatch`·`add_dimension`·`save_drawing`. **`process_command`는 필터로 차단**(SendCommand 비동기라 레이스) |
+| 2D 작도 | [`daobataotie/CAD-MCP`](https://github.com/daobataotie/CAD-MCP) **MIT** | pywin32 COM | 채택. 실제 도구 11개 — `draw_line`·`draw_circle`·`draw_arc`·`draw_ellipse`·`draw_polyline`·`draw_rectangle`·`draw_text`·`draw_hatch`·`add_dimension`·`save_drawing`·`process_command`. **`process_command`는 필터로 차단** — 원안은 근거가 "SendCommand 비동기 레이스"였는데 실측(2026-08-28) 결과 틀렸다: `SendCommand`는 이 리포에 없고 `process_command`는 정규식+이중언어 키워드 파서로 10개 도형 명령에 매핑할 뿐이다. 차단은 유지 — LLM이 이미 하는 의도 해석을 정규식 파서가 중복하며 오파싱 위험만 더한다 (`vendor/README.md` 참고) |
 | 2D 보조 | **`acad-assist` (신규 구현)** | pywin32 COM | 조회·수정·캡처·내보내기·승인. CAD-MCP에 전부 없음 |
 | 3D 모델링 | [`mhyrr/sketchup-mcp`](https://github.com/mhyrr/sketchup-mcp) | Ruby 확장 TCP 서버 + Python MCP | 채택. 컴포넌트·재질·씬 조회·선택 + **Ruby 임의 실행** |
-| 렌더 | [`cl0nazepamm/3dsmax-mcp`](https://github.com/cl0nazepamm/3dsmax-mcp) **MIT** | 네이티브 C++ 브리지, stdio | 채택. 도구 151개(core 87). `render_scene`·`smart_import`·`merge_from_file`·`execute_maxscript`. **Max 2023–2027** |
+| 렌더 | [`cl0nazepamm/3dsmax-mcp`](https://github.com/cl0nazepamm/3dsmax-mcp) **MIT** | 네이티브 C++ 브리지, stdio | 채택. 도구 151개(`MCP_TOOL_PROFILE=core`로 87개) — 예전엔 "~24개"로 잘못 추정했었다. `render_scene`·`smart_import`·`merge_from_file`·`execute_maxscript`. **Max 2023–2027**, Python 3.12+ |
 | 일정 | [`nspady/google-calendar-mcp`](https://github.com/nspady/google-calendar-mcp) | stdio, OAuth | 채택. 다계정·다캘린더 |
 | 웹 검색 | **Hermes 내장** (Brave/Tavily/Exa/SearXNG 등 8종) | — | 만들 필요 없음. API 키만 |
 | 이미지 생성 | **Hermes 내장** | — | 만들 필요 없음 |
@@ -80,16 +80,29 @@
 
 ### V-Ray 전용 MCP은 존재하지 않는다 — 필요도 없다
 
-V-Ray는 3ds Max 안에서 도는 렌더러 플러그인이다. `execute_maxscript` 로 제어한다:
+V-Ray는 3ds Max 안에서 도는 렌더러 플러그인이다. `execute_maxscript` 로 제어한다.
 
-```maxscript
-renderers.current = V_Ray()
-rendOutputFilename = @"C:\hermes-projects\room01\03-render\persp_4k.png"
-rendSaveFile = true
-render vfb:false outputSize:[3840,2160]
-```
+> **정정 (2026-08-28, 실측)**: 원안이 여기 적었던 스니펫(`renderers.current = V_Ray()` +
+> `rendOutputFilename` + `render vfb:false outputSize:[...]`)은 **자기모순이라 동작하지
+> 않는다.** MAXScript `render()` 함수는 Autodesk 공식 문서에 명시된 대로 Render Setup
+> 대화상자 설정을 **무시한다** — `rendOutputFilename`/`rendSaveFile`을 미리 지정해도
+> `render()`가 그 값을 안 읽는다. 실제로 동작하는 경로는 둘 중 하나다:
+> 1. `render outputSize:[w,h] outputfile:@"..." vfb:off` — `render()`에 직접 인자로 준다
+>    (Render Setup은 여전히 무시됨, V-Ray 출력 설정도 안 먹힘).
+> 2. `rendSaveFile = true; rendOutputFilename = @"..."; renderWidth = w; renderHeight = h;`
+>    로 Render Setup 글로벌을 설정한 뒤 `max quick render` 로 UI 렌더 액션을 트리거 — **이
+>    경로가 V-Ray의 `output_*` 속성과 렌더 엘리먼트를 존중한다.** 프로덕션 렌더는 이 경로를
+>    쓴다 (`mcp-acad-assist/src/acad_assist/maxscripts.py`의 `render_to_file_script`).
+>
+> V-Ray 렌더러 지정도 `V_Ray()`처럼 버전 고정 클래스명을 쓰면 V-Ray SDK 버전이 바뀔 때마다
+> 깨진다. `rendererClass.classes`를 `matchPattern "V_Ray*"`로 훑어 인스턴스화하는 버전
+> 무관 방식을 쓴다.
 
-다만 `3dsmax-mcp`의 `render_scene`은 뷰포트 수준이고 렌더-투-파일·렌더러 선택·렌더 설정 전용 도구가 **없다**. 프로덕션 렌더는 전부 MAXScript 경유가 된다. → **Stage 5에서 우리가 Hermes 스킬로 MAXScript 템플릿을 고정**해서 LLM이 매번 스크립트를 지어내지 않게 한다.
+또한 `3dsmax-mcp`의 `render_scene`은 뷰포트 수준이 **아니라 실제 프로덕션 렌더**다(활성
+렌더러로 렌더한다) — 다만 위에서 설명한 대로 Render Setup 설정을 무시하고
+`width`/`height`/`output_path`만 받는다는 게 진짜 한계다. 렌더-투-파일·렌더러 선택 전용
+도구는 없으므로 프로덕션 렌더는 전부 MAXScript(경로 2) 경유가 된다. → **Stage 5에서 우리가
+Hermes 스킬로 MAXScript 템플릿을 고정**해서 LLM이 매번 스크립트를 지어내지 않게 한다.
 
 ---
 
@@ -146,7 +159,12 @@ C:\hermes-projects\<project>\
 **접합부 주의:**
 - AutoCAD → SketchUp: SketchUp **Pro** 의 DWG 임포터 사용. `model.import(path)` 를 Ruby로 호출
 - SketchUp → 3ds Max: Max가 `.skp` 를 직접 임포트한다. `smart_import`(메시 폴더 일괄용)가 아니라 `execute_maxscript` 의 `importFile @"...model.skp" #noPrompt` 를 쓴다
-- 단위계: AutoCAD mm ↔ SketchUp mm ↔ Max System Unit. **Stage 4 첫 작업이 단위 통일 확인**
+- 단위계: AutoCAD mm ↔ SketchUp(내부 인치) ↔ Max System Unit.
+  > **정정 (2026-08-28, 실측)**: "SketchUp mm"는 틀렸다 — sketchup-mcp의 파이썬 도구로
+  > 좌표를 넘기면 SketchUp Ruby API 내부 길이 단위(인치)로 그대로 해석돼 mm 값이 25.4배
+  > 커진다. 이 파이프라인은 그 파이썬 도구 대신 `eval_ruby`로 Ruby 텍스트를 직접 실행해,
+  > 텍스트 안에 `3000.mm`처럼 SketchUp 자신의 `Numeric#mm` 변환 메서드를 심는다
+  > (`sketchup_scripts.py`) — "단위 통일 확인"이 아니라 "매 값마다 명시적 변환"이 실제 대응.
 
 ### 도구 수 폭발 대응
 
@@ -154,12 +172,12 @@ C:\hermes-projects\<project>\
 
 | 서버 | 원본 | 노출 |
 |---|---|---|
-| `acad2d` | 10 | 9 (`process_command` 차단) |
-| `acad-assist` | — | 8 |
-| `sketchup` | ~12 | ~12 |
-| `max3d` | 151 (core 87) | **~25** (query·objects·materials·viewport·external files·scripting만) |
+| `acad2d` | 11 (실측, 예전엔 10으로 오기재 — `draw_ellipse` 누락) | 10 (`process_command` 차단) |
+| `acad-assist` | — | 8 (`acad-read` 5 + `acad-write` 3 로 이중 등록, 합쳐서 8 — §승인 게이트 참고) |
+| `sketchup` | 10 (실측, 예전 "~12"는 부정확한 추정) | 10 |
+| `max3d` | 151 (`MCP_TOOL_PROFILE=core`로 87) | `tools.include`로 실제 선정한 개수 — Stage 5에서 확정 (`hermes-config/config.yaml.example` 참고, 예전 "~25" 추정은 근거 없이 카테고리 이름만 보고 짐작한 숫자였다) |
 | `calendar` | ~8 | ~6 |
-| 합계 | | **~60** |
+| 합계 | | 위 acad2d/acad-assist/sketchup/calendar 합계로 ~34, max3d 확정 후 재계산 |
 
 ---
 
@@ -346,7 +364,7 @@ curl -X POST .../v1/chat/completions -d '{"model":"hermes-agent","messages":[{"r
 | 위험 | 대응 |
 |---|---|
 | **`render_scene`이 프로덕션 렌더를 못 함** | MAXScript 템플릿을 Stage 5에서 스킬로 고정. LLM이 스크립트를 즉흥 생성하지 않게 함 |
-| **CAD-MCP과 acad-assist가 같은 COM을 두드림** | 역할 분리(그리기 vs 조회·수정·저장) + `process_command` 차단으로 비동기 SendCommand 경로 제거 |
+| **CAD-MCP과 acad-assist가 같은 COM을 두드림** | 역할 분리(그리기 vs 조회·수정·저장) + `process_command` 차단(정규식 파서 오파싱·의도 해석 중복 방지 — SendCommand 근거는 사실이 아니었다, 실측 2026-08-28) |
 | **단위계 불일치** | Stage 4 첫 작업이 단위 검증. `meta.json` 에 단위 기록 |
 | **도구 60개도 많음** | 실사용에서 오선택 나면 단계별 프로파일로 더 쪼갬 (Hermes 프로파일 기능) |
 | **AutoCAD/SketchUp/Max 동시 상주 = 메모리** | 32GB면 됨. 단 렌더 중엔 다른 앱 유휴 상태 유지 |
