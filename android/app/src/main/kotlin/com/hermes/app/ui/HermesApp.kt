@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hermes.app.ChatOutcome
 import com.hermes.app.HermesApiClient
+import com.hermes.app.HermesSettings
 import com.hermes.app.SettingsStore
 import com.hermes.app.UrlConnectionHttpTransport
 import java.util.UUID
@@ -155,5 +156,11 @@ fun HermesApp(settingsStore: SettingsStore) {
         if (chatOutput.isNotBlank()) {
             Text(chatOutput)
         }
+
+        HorizontalDivider()
+
+        // 승인 게이트 2차(MCP 트러스트 게이트)는 /v1/runs 경로에만 있다 — CAD 쓰기 도구가
+        // 폰에서 승인을 받으려면 이 섹션을 거쳐야 한다. 알려진 제약은 RunsSection.kt 참고.
+        RunsSection(settings = HermesSettings(serverUrl = serverUrlInput, apiKey = apiKeyInput))
     }
 }
