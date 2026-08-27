@@ -23,8 +23,9 @@ mcp_servers:
 
   # --- AutoCAD 조회·수정·캡처·내보내기·승인 게이트 (mcp-acad-assist, 이 리포 신규 구현) ---
   #
-  # ⚠️ 같은 서버(`acad-assist` 콘솔 스크립트)를 아래 두 이름으로 **두 번 등록**한다.
-  # 이유(2026-08-28 실측, windows-migration.md §7 참고): Hermes v0.20.6의 MCP 트러스트
+  # ⚠️ 같은 서버(`acad-assist` 콘솔 스크립트)를 아래 세 이름(acad-read/acad-write/
+  # cad-pipeline)으로 **여러 번 등록**한다. 이유(2026-08-28 실측, windows-migration.md
+  # §7 참고): Hermes v0.20.6의 MCP 트러스트
   # 게이트(`tools/mcp_tool.py`)는 도구의 `annotations.readOnlyHint`를 봐서 승인 없이
   # 실행해도 되는 도구를 가려내야 하는데, 그 코드가 `getattr(annotations, "readOnlyHint")`로
   # 읽는 반면 mcp SDK(2.1.1)의 실제 파이썬 필드명은 `read_only_hint`다 — live discovery
@@ -50,6 +51,27 @@ mcp_servers:
       HERMES_CAD_ROOT: "C:\\hermes-projects"
     tools:
       include: ["modify", "layer", "export"]
+
+  # 같은 acad-assist 콘솔 스크립트의 세 번째 등록 — SketchUp/3ds Max 로 넘길 결정론적
+  # Ruby/MAXScript **텍스트 생성기** 10개(sketchup_scripts.py/maxscripts.py). COM 을
+  # 안 건드리고 부작용이 전혀 없어(문자열만 돌려준다) 전부 읽기 전용이다. 생성된
+  # 텍스트는 sketchup/max3d 서버의 eval_ruby/execute_maxscript 에 한 글자도 고치지
+  # 않고 그대로 넘겨야 한다 — `hermes-config/skills/cad-pipeline.md` 참고.
+  cad-pipeline:
+    command: "acad-assist"
+    trust: full
+    tools:
+      include:
+        - "sketchup_import_dwg_script"
+        - "sketchup_extrude_walls_script"
+        - "sketchup_save_skp_script"
+        - "sketchup_export_fbx_script"
+        - "sketchup_capture_iso_script"
+        - "sketchup_unit_check_script"
+        - "max_import_skp_script"
+        - "max_setup_camera_script"
+        - "max_setup_lighting_script"
+        - "max_render_to_file_script"
 
   # --- 3D 모델링 (SketchUp Pro) ---
   # mhyrr/sketchup-mcp.

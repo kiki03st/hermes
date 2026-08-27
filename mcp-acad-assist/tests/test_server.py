@@ -18,14 +18,26 @@ def _tools_by_name() -> dict[str, object]:
     return {t.name: t for t in server.mcp._tool_manager.list_tools()}
 
 
-def test_all_eight_tools_are_registered():
+def test_all_eighteen_tools_are_registered():
     tools = _tools_by_name()
-    assert set(tools) == set(server.READ_ONLY_TOOLS) | set(server.WRITE_TOOLS)
-    assert len(tools) == 8
+    all_names = set(server.READ_ONLY_TOOLS) | set(server.WRITE_TOOLS) | set(server.PIPELINE_TOOLS)
+    assert set(tools) == all_names
+    assert len(tools) == 18
 
 
-def test_read_only_and_write_sets_do_not_overlap():
-    assert set(server.READ_ONLY_TOOLS).isdisjoint(server.WRITE_TOOLS)
+def test_tool_groups_do_not_overlap():
+    groups = [set(server.READ_ONLY_TOOLS), set(server.WRITE_TOOLS), set(server.PIPELINE_TOOLS)]
+    for i, a in enumerate(groups):
+        for b in groups[i + 1 :]:
+            assert a.isdisjoint(b)
+
+
+def test_pipeline_tools_are_all_read_only():
+    """생성기 도구는 부작용이 전혀 없다(문자열만 돌려준다) — 전부 읽기 전용이어야 한다."""
+    tools = _tools_by_name()
+    for name in server.PIPELINE_TOOLS:
+        ann = tools[name].annotations
+        assert ann is not None and ann.read_only_hint is True
 
 
 def test_read_only_tools_carry_read_only_hint_true():
@@ -128,3 +140,44 @@ def test_capture_tool_returns_base64_image(monkeypatch, tmp_path):
     result = server.capture(output_path=str(tmp_path / "view.png"))
 
     assert "image_base64" in result
+
+
+def test_pipeline_tools_delegate_to_the_generator_modules_verbatim():
+    """MCP 도구가 생성기 함수를 감싸기만 하고 텍스트를 바꾸지 않는지 확인한다 —
+    바뀌면 골든 테스트가 고정한 계약과 실제 MCP 응답이 어긋난다."""
+    from acad_assist import maxscripts, sketchup_scripts
+
+    assert server.sketchup_import_dwg_script(r"C:\a.dwg") == sketchup_scripts.import_dwg_script(
+        r"C:\a.dwg"
+    )
+    assert server.sketchup_extrude_walls_script(
+        3000.0, layer="walls"
+    ) == sketchup_scripts.extrude_walls_script(3000.0, layer="walls")
+    assert server.sketchup_save_skp_script(r"C:\a.skp") == sketchup_scripts.save_skp_script(
+        r"C:\a.skp"
+    )
+    assert server.sketchup_export_fbx_script(r"C:\a.fbx") == sketchup_scripts.export_fbx_script(
+        r"C:\a.fbx"
+    )
+    assert server.sketchup_capture_iso_script(
+        r"C:\a.png", width=800, height=600
+    ) == sketchup_scripts.capture_iso_script(r"C:\a.png", width=800, height=600)
+    assert server.sketchup_unit_check_script() == sketchup_scripts.unit_check_script()
+
+    assert server.max_import_skp_script(r"C:\a.skp") == maxscripts.import_skp_script(r"C:\a.skp")
+    assert server.max_setup_camera_script(
+        [1.0, 2.0, 3.0], [0.0, 0.0, 0.0], fov=50.0, name="X"
+    ) == maxscripts.setup_camera_script((1.0, 2.0, 3.0), (0.0, 0.0, 0.0), fov=50.0, name="X")
+    assert server.max_setup_lighting_script(sky_multiplier=2.0) == maxscripts.setup_lighting_script(
+        sky_multiplier=2.0
+    )
+    assert server.max_render_to_file_script(
+        r"C:\a.png", preset="preview"
+    ) == maxscripts.render_to_file_script(r"C:\a.png", "preview", width=None, height=None)
+
+
+def test_pipeline_tools_accept_plain_list_coordinates():
+    """MCP 는 좌표를 JSON 배열(파이썬 list)로 넘긴다 — setup_camera_script 가
+    기대하는 tuple 이 아니다. server.py 가 변환을 책임진다."""
+    script = server.max_setup_camera_script([100.0, 200.0, 300.0], [0.0, 0.0, 0.0])
+    assert "pos:[100.0,200.0,300.0]" in script
