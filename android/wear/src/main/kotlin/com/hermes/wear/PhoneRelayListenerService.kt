@@ -26,6 +26,15 @@ class PhoneRelayListenerService : WearableListenerService() {
         createNotificationChannelIfNeeded()
     }
 
+    override fun onDestroy() {
+        // TextToSpeech 엔진을 여기서 안 닫으면 서비스가 재생성될 때마다(시스템이
+        // WearableListenerService를 필요할 때 깨우고 내리는 식으로 반복 호출한다)
+        // 이전 엔진 인스턴스가 누수된다 — VoiceOutputHelper.shutdown()이 있었지만
+        // 아무도 호출하지 않고 있었다.
+        voice.shutdown()
+        super.onDestroy()
+    }
+
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
             DataLayerPaths.STATUS -> handleStatus(event.data)
