@@ -60,84 +60,135 @@ Windows 재현 과정에서 문서와 실제가 어긋난 지점, 새로 발견�
 
 ---
 
-## Stage 2 — 폰 정식 앱 — ⬜ 시작 전
+## Stage 2 — 폰 정식 앱 — 🟡 승인 다이얼로그·runs 스트리밍은 됨, 나머지는 아직
 
-Stage 1은 의도적으로 "비스트리밍, 채팅 1회, 설정 화면"까지만 스코프였다. 아직 없는 것:
+Stage 1은 의도적으로 "비스트리밍, 채팅 1회, 설정 화면"까지만 스코프였다. Stage 3~6 작업
+중(2026-08-28) 승인 게이트 2차가 `/v1/runs`에만 있다는 게 실측으로 확인되면서, 그 경로에
+필요한 만큼은 먼저 만들었다:
 
-- SSE 스트리밍 채팅 (`POST /v1/chat/completions`를 스트리밍으로, `hermes.tool.progress` 이벤트를
-  도구 진행 칩으로 표시)
+**끝난 것 (Stage 3~6 작업의 부산물)**:
+- `RunsClient`(`POST /v1/runs`, `GET .../events` SSE, `POST .../approval`, `POST .../stop`) —
+  **`/v1/chat/completions` 스트리밍이 아니라 `/v1/runs` 스트리밍**으로 만들었다. 원안이 원한
+  건 아니지만 실시간 텍스트 표시는 똑같이 되고, 승인 게이트가 이 경로에만 있어서 어차피
+  이쪽이 필요했다.
+- 승인 다이얼로그 — `approval.request`의 `choices` 배열을 그대로 버튼으로 렌더(하드코딩
+  없음). "뼈대"가 아니라 실제로 동작 확인됨(§Stage 3 참고).
+- 도구 진행 표시 — `tool.started`/`tool.completed`/`reasoning.available` 이벤트를 상태
+  줄로 표시.
+
+**아직 없는 것**:
+- `/v1/chat/completions` 자체의 SSE 스트리밍 (지금은 `/v1/runs` 경로로 대체됐지만, 원래
+  Stage 1 채팅 섹션은 여전히 비스트리밍이다)
 - 세션 목록/이어하기/삭제 (`/api/sessions` CRUD)
-- 이미지 뷰어 (핀치 줌) — Stage 3~5 결과물(캡처 PNG, 렌더 이미지)을 보여줄 통로, 미리 뚫어두는 게
-  좋다고 PLAN.md가 명시
-- 승인 다이얼로그 뼈대 (미리보기 PNG + 영향 요약 + [승인]/[취소]) — Stage 3의 1차 승인 게이트와
-  연결될 UI
+- 이미지 뷰어 — **못 만든 이유가 있다**: `/v1/runs` 이벤트 스트림이 도구 호출의 반환값(캡처
+  PNG의 `image_base64` 등)을 아예 노출하지 않는다(실측 확인). 그 데이터가 폰까지 올 확정된
+  통로가 없어서, 통로 없는 뷰어를 만드는 대신 미해결로 남겨뒀다 —
+  `hermes-config/skills/cad-pipeline.md`의 "알려진 공백"과
+  `android/app/src/main/kotlin/com/hermes/app/ui/RunsSection.kt` 문서 주석 참고.
 - 앱 강제종료 상태에서 워치 명령이 동작하는지 (서비스 수명주기), 삼성 배터리 최적화 예외 온보딩
 
-**검증 기준**: 폰 다중 턴 대화 중 글자가 흘러나옴. 앱 스와이프 종료 후에도 워치 명령 동작.
+**검증 기준**: 폰 다중 턴 대화 중 글자가 흘러나옴(`/v1/runs`로 충족). 앱 스와이프 종료 후에도
+워치 명령 동작(미검증).
 
 ---
 
-## Stage 3 — AutoCAD 2D — 🟡 골격만, COM 실동작 전부 남음
+## Stage 3 — AutoCAD 2D — 🟡 코드·승인 게이트 완성, COM 실동작만 남음
 
-**끝난 것**: `mcp-acad-assist` 패키지 골격(`server.py`/`com.py`/`query.py`/`modify.py`/`capture.py`/
-`export.py`/`confirm.py`), COM을 목(mock)으로 대체한 pytest 18개 — 승인 게이트 로직·좌표 변환·
-재연결 로직은 이미 검증됨. `hermes-config/config.yaml.example`에 `acad2d`/`acad-assist` 필터링
-설정 초안도 있음.
+**끝난 것 (2026-08-28, `feat/stage3-6-cad-pipeline` 브랜치)**: `mcp-acad-assist` 8개 도구
+전부 완성(`query.py`/`modify.py`/`capture.py`/`export.py`/`confirm.py`, 읽기 5/쓰기 3으로
+분리해 `server.py`에 등록), COM을 목(mock)으로 대체한 pytest **194개**(계획 §A~D 전부).
+`AcSaveAsType`은 런타임 타입 라이브러리 조회 + 검증된 폴백(하드코딩 아님), 좌표는 실제
+VARIANT(`VT_ARRAY|VT_R8`)로 변환(pywin32가 이 PC에 있어서 래핑 자체는 검증됨), `capture`는
+base64 PNG 반환, `export`는 `project=`로 `meta.json` 자동 등록.
 
-**안 끝난 것 (전부 실제 AutoCAD 필요, 여기서부터가 진짜 Windows 이관의 이유)**:
-1. `vendor/CAD-MCP` 클론 → `config.yaml`에 등록 → **`process_command` 도구를 필터로 반드시 차단**
-   (PLAN.md: SendCommand 비동기라 레이스 컨디션 위험)
-2. `capture.py`의 `PlotToFile` 실제 인자(용지 크기·배율·플롯 스타일) — 지금은 최소 골격뿐, 실
-   AutoCAD ActiveX 문서/실기 테스트로 채워야 함
-3. `export.py`의 DXF 저장용 `AcSaveAsType` 버전 상수 — 지금 `NotImplementedError`
-4. 승인 게이트 1차(도구 내부 `confirm`)는 이미 구현됐으니 실제 AutoCAD로 스모크 테스트만. 2차
-   (`/v1/runs/{id}/approval`)는 **여기서 실동작 여부를 처음 확인**해야 함 — 안 되면 1차만으로 진행
-5. 프로젝트 폴더 규약(`C:\hermes-projects\<project>\{01-cad,02-model,03-render}\`, `meta.json`)을
-   Hermes 영구 메모리에 저장
+**승인 게이트 2차를 이 PC에서 실측으로 완전히 왕복 검증했다** — 트러스트 게이트(`trust:
+untrusted`)를 실제로 등록하고 쓰기 도구를 유도해 `approval.request` SSE가 뜨는 것,
+`POST /v1/runs/{id}/approval`로 승인하는 것, 이후 도구가 COM 부재로 우아하게 실패하는 것까지
+전부 확인했다 — **AutoCAD 없이 승인 게이트 자체는 끝났다.** 폰 다이얼로그도 실제로 이 흐름에
+맞춰 동작한다(`RunsSection.kt`).
+
+`hermes-config/config.yaml.example`에 `acad2d`(실측: 도구 11개, `process_command` 차단
+근거 정정 — SendCommand 아니라 정규식 파서)/`acad-read`/`acad-write`/`cad-pipeline` 전부
+반영 완료.
+
+**안 끝난 것 (전부 실제 AutoCAD 필요)**:
+1. `vendor/CAD-MCP` 클론 → 실제 설치·연결 확인 (§`docs/setup-cad-workstation.md`)
+2. `capture.py`의 `PlotToFile` — 인자 자체는 맞다고 확인됐지만(2개뿐, §G), 실제 도면에서
+   원하는 캡처가 나오는지는 미검증
+3. `export.py`의 DXF 저장 — 코드는 완성됐지만 실 AutoCAD로 열리는 파일이 나오는지 미검증
+4. 승인 게이트 1차(도구 내부 `confirm`)는 로직 완성, 실 AutoCAD로 스모크 테스트만 남음
+5. 프로젝트 폴더 규약은 `projects.py`로 코드 완성(`meta.json` 스키마 확정) — 실사용 검증만 남음
 
 **검증 기준**: 폰에서 *"3×4m 방 평면 그리고 벽 두께 200 표시해줘"* → AutoCAD에 도형 생성 →
-**승인 요청이 폰에 뜸** → 승인 → `01-cad/plan.dwg` 저장 → 캡처 PNG가 폰에 표시.
+**승인 요청이 폰에 뜸** → 승인 → `01-cad/plan.dwg` 저장 → 캡처 PNG가 폰에 표시(단, PNG를
+실제로 폰에 "보여주는" 통로는 아직 없다 — Stage 2 참고).
 
 ---
 
-## Stage 4 — SketchUp Pro — ⬜ 시작 전
+## Stage 4 — SketchUp Pro — 🟡 스크립트 생성기 완성, 앱 연결·실동작만 남음
 
-1. `vendor/sketchup-mcp` (Ruby 확장) 설치, SketchUp에서 "Start Server"로 TCP 9876 기동, MCP 등록
-2. **단위계 통일 검증부터** (AutoCAD mm ↔ SketchUp mm) — PLAN.md가 Stage 4 첫 작업으로 못박음
-3. DWG 임포트(SketchUp Pro `model.import(path)`) → 벽 돌출 → `.skp` 저장 → `.fbx` 내보내기를 Ruby
-   스니펫으로 고정
-4. 뷰 캡처 → 폰 표시
+**끝난 것 (2026-08-28)**: `sketchup_scripts.py` — DWG 임포트/벽 압출/skp 저장/fbx 내보내기/
+아이소 캡처/단위 점검 6개 Ruby 생성기, 골든 텍스트 테스트로 고정(15개). **단위계는 "통일
+검증"이 아니라 "매 값마다 명시적 변환"으로 설계 변경** — 실측 결과 SketchUp Ruby API 내부
+길이 단위가 인치라, mm 값을 Python에서 미리 계산하지 않고 SketchUp 자신의 `Numeric#mm`을
+스크립트에 심는다(`3000.0.mm`). `config.yaml.example`의 sketchup 블록을 `uvx`(PyPI 고정,
+`eval_ruby` 없을 수 있음) 대신 소스 클론으로 교체.
+
+**안 끝난 것 (전부 실제 SketchUp 필요)**:
+1. `vendor/sketchup-mcp` 클론·설치, SketchUp에서 "Start Server"로 TCP 9876 기동, MCP 등록
+   확인 (§`docs/setup-cad-workstation.md`)
+2. 벽 압출 스니펫의 가정("벽 레이어가 닫힌 면으로 임포트된다") 검증 — 실 DWG 도면 관례와
+   맞는지 처음 확인
+3. 뷰 캡처 → 폰 표시 — Stage 2와 동일한 이유로 통로 미해결(SSE가 도구 결과를 안 실어줌)
 
 **검증 기준**: *"방금 그 도면 3m 높이로 세워줘"* → `01-cad/plan.dwg` 임포트해 3D 벽 생성 →
-`02-model/model.skp` 저장 → 아이소메트릭 캡처가 폰에 도착.
+`02-model/model.skp` 저장 → 아이소메트릭 캡처(폰 표시는 통로 미해결로 보류).
 
 ---
 
-## Stage 5 — 3ds Max + V-Ray — ⬜ 시작 전
+## Stage 5 — 3ds Max + V-Ray — 🟡 스크립트 생성기 완성, 앱 연결·실동작만 남음
 
-1. `vendor/3dsmax-mcp` (네이티브 C++ 브리지, Max 2023–2027) 설치, 도구 필터로 151개 중 ~25개만
-   노출 (PLAN.md "도구 수 폭발 대응" 표 — query·objects·materials·viewport·external files·
-   scripting 카테고리만)
-2. **MAXScript 템플릿을 Hermes 스킬로 고정** — 임포트/카메라/조명/V-Ray 설정/렌더-투-파일. LLM이
-   매번 스크립트를 즉흥 생성하지 않게. `render_scene`은 뷰포트 수준이라 프로덕션 렌더는 전부
-   `execute_maxscript` 경유가 됨 (PLAN.md 확인됨)
-3. 렌더는 `POST /v1/runs` → `/events` SSE로 (Stage 2의 스트리밍/runs 클라이언트가 먼저 필요) —
-   워치엔 완료 알림 push
-4. 프리뷰(저해상도)/파이널(고해상도) 두 프리셋
+**끝난 것 (2026-08-28)**: `maxscripts.py` — skp 임포트/카메라/조명/V-Ray 렌더 4개 MAXScript
+생성기, JSON 왕복 실제 검증(이중 이스케이프 산수 포함) 25개 테스트. **PLAN.md 원안의 렌더
+스니펫이 자기모순이라 동작 안 했던 것을 여기서 발견·정정** — `render()`/`render_scene` 둘 다
+Render Setup 대화상자 설정을 무시하므로, `rendSaveFile`/`rendOutputFilename`/`renderWidth`/
+`renderHeight` 글로벌을 직접 설정하고 `max quick render`로 트리거하는 경로(경로 2)만 V-Ray
+출력 설정을 존중한다. V-Ray 렌더러는 `V_Ray*` 패턴 매칭으로 버전 무관하게 찾는다(버전 고정
+클래스명 아님). 렌더 완료는 자기 보고가 아니라 출력 파일 존재로 검증 후 실패 시 `throw`.
+`config.yaml.example`의 max3d 블록을 `MCP_TOOL_PROFILE=core` + 실측 도구 이름으로 교체
+(151개 중 core 87개, 예전 "~25개" 추정은 근거 없었음 — `execute_maxscript`는 core에 있어
+문제없음).
+
+승인 게이트 2차도 `max3d`(`trust: untrusted`)에 그대로 적용된다 — Stage 3와 같은 메커니즘.
+
+**안 끝난 것 (전부 실제 3ds Max + V-Ray 필요)**:
+1. `vendor/3dsmax-mcp` 클론·설치(`uv sync && uv run python install.py` → Max 재시작), 도구
+   이름 최종 확인(`hermes mcp list`) — 조사 기반 추정이지 실행 중 인스턴스로 검증된 적 없음
+2. 카메라/조명 기본값이 실제 장면에서 쓸 만한지 검증
+3. V-Ray 실제 렌더링, 출력 파일 검증
+4. 렌더 완료 워치 알림 — `render_automations`가 이 용도에 맞지만 `full` 프로파일 필요(지금
+   `core`만 켜짐), 필요시 추가
 
 **검증 기준**: 워치에 *"아까 모델 V-Ray로 렌더 걸어줘"* → 워치 "렌더 시작, 몇 분 걸려요" + 진동 →
-화면 꺼도 됨 → 완료 시 워치 알림 + 진동 + TTS → 폰에서 `03-render/persp.png` 확인.
+화면 꺼도 됨 → 완료 시 워치 알림 + 진동 + TTS(미구현) → 폰에서 `03-render/persp_4k.png` 확인
+(폰 표시는 통로 미해결로 보류, Stage 2 참고).
 
 ---
 
-## Stage 6 — 파이프라인 통합 스킬 — 🟡 초안만
+## Stage 6 — 파이프라인 통합 스킬 — 🟡 문서 완성, 실행 검증만 남음
 
-`hermes-config/skills/cad-pipeline.md`에 폴더 규약·MAXScript 렌더 스니펫 초안은 있지만, Stage
-3~5가 실제로 끝나야 절차·단계별 승인 지점·실패 시 되돌리기를 정확히 채울 수 있다. Stage 5까지
-끝난 뒤 마지막에 정리.
+**끝난 것 (2026-08-28)**: `hermes-config/skills/cad-pipeline.md` 완성 — 실제 등록된 도구
+이름 표, 각 단계 절차, 두 겹 승인(1차/2차)이 폰에서 다른 정보를 보여준다는 실측 제약, 실패 시
+되돌리기 절차, "알려진 공백" 목록(meta.json 자동 등록 안 됨, 이미지 뷰어 통로 없음 등 — 값을
+지어내지 않고 명시). 자기모순이던 MAXScript 렌더 스니펫도 정정된 버전으로 교체.
+`docs/setup-cad-workstation.md`(대상 환경 설치 순서) + `docs/verify-cad-workstation.ps1`
+(사전 점검 스크립트, ASCII 전용) 신설.
+
+**안 끝난 것**: 실제 CAD 3종으로 전체 파이프라인 관통 검증. 지금까지 나온 코드·문서가 전부
+맞는 가정 위에 서 있는지는 이 스모크 테스트가 처음 확인해준다.
 
 **검증 기준**: *"3×4m 원룸, 창 하나. 도면부터 렌더까지 해줘"* → 3단계 순서 진행, **각 단계 전환
-마다 폰에 승인** 뜸. 중간에 [취소] 눌러도 앞 단계 산출물은 남음.
+마다 폰에 승인** 뜸. 중간에 [거부] 눌러도 앞 단계 산출물은 남음.
 
 ---
 
@@ -169,13 +220,24 @@ Ubuntu에서 Cloudflare **quick tunnel**(`cloudflared tunnel --url`)로 외부 �
 |---|---|---|
 | 0. Hermes 세우기 | ✅ | **없음 — Windows 재현 완료 (2026-08-28)** |
 | 1. MVP 캘린더 | 🟡 | 워치 실기기 테스트만 (빌드·테스트·폰 경로는 Windows에서 통과) |
-| 2. 폰 정식 앱 | ⬜ | SSE 스트리밍, 세션 목록, 이미지 뷰어, 승인 다이얼로그 |
-| 3. AutoCAD 2D | 🟡 | CAD-MCP 등록, COM 실동작(capture/export), 승인 게이트 2차 |
-| 4. SketchUp | ⬜ | 전체 |
-| 5. 3ds Max+V-Ray | ⬜ | 전체 |
-| 6. 파이프라인 스킬 | 🟡 | Stage 3~5 완료 후 마무리 |
-| 7. 외부 접속 굳히기 | 🟡 | named tunnel/Tailscale, 자동시작, 감사로그 |
+| 2. 폰 정식 앱 | 🟡 | runs 스트리밍·승인 다이얼로그는 완료. SSE 채팅(chat/completions), 세션 목록, 이미지 뷰어(통로 미해결) 남음 |
+| 3. AutoCAD 2D | 🟡 | **코드·승인 게이트 2차 전부 완료(실측 검증됨).** 실 AutoCAD 스모크 테스트만 남음 |
+| 4. SketchUp | 🟡 | 스크립트 생성기 완료. 앱 연결·실동작 검증만 남음 |
+| 5. 3ds Max+V-Ray | 🟡 | 스크립트 생성기 완료(렌더 경로 정정됨). 앱 연결·실동작 검증만 남음 |
+| 6. 파이프라인 스킬 | 🟡 | 문서 완성. 실 CAD 3종으로 전체 관통 검증만 남음 |
+| 7. 외부 접속 굳히기 | 🟡 | named tunnel/Tailscale, 감사로그 (자동시작은 완료) |
 | 8. 선택 기능 | ⬜ | 필수 아님 |
+
+**2026-08-28 CAD 파이프라인 작업 요약**: `feat/stage3-6-cad-pipeline` 브랜치에서 Stage 3~6
+코드를 전부 작성했다 — mcp-acad-assist 8도구 + 스크립트 생성기 10개(총 18개 MCP 도구),
+Android RunsClient·승인 다이얼로그, 문서 3종(`cad-pipeline.md`/`setup-cad-workstation.md`/
+`verify-cad-workstation.ps1`). Python 194 tests + Kotlin 44 tests, 전부 그린. **승인 게이트
+2차는 AutoCAD 없이 이 PC에서 실측으로 완전히 왕복 검증했다** — 남은 건 전부 "AutoCAD/
+SketchUp/3ds Max가 실제로 설치된 환경에서 처음 실행해봐야 아는 것"뿐이다
+(`docs/setup-cad-workstation.md` §6 스모크 테스트 순서대로 진행할 것). 이 작업 중 발견한
+실측 제약 하나가 스코프를 바꿨다: `/v1/runs` 이벤트 스트림이 도구 호출의 인자·반환값을
+노출하지 않아서, 1차 미리보기를 2차 승인과 같이 보여줄 수 없고 이미지 뷰어도 못 만들었다 —
+`cad-pipeline.md`의 "알려진 공백" 참고.
 
 각 단계 끝날 때마다 이 표를 갱신할 것 — "무엇이 실제로 끝났는지"가 다음 세션(또는 다음 AI
 에이전트)이 헷갈리지 않을 가장 중요한 정보다.
