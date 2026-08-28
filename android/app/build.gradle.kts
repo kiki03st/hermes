@@ -33,6 +33,10 @@ android {
             "String", "DEFAULT_API_KEY",
             "\"${localProperties.getProperty("hermes.apiKey", "")}\"",
         )
+        buildConfigField(
+            "String", "PICOVOICE_ACCESS_KEY",
+            "\"${localProperties.getProperty("picovoice.accessKey", "")}\"",
+        )
     }
 
     buildTypes {
@@ -67,6 +71,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.play.services.wearable)
@@ -74,6 +79,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.porcupine.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

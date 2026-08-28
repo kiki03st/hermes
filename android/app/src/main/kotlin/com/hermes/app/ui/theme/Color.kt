@@ -1,0 +1,56 @@
+package com.hermes.app.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+// 다크 팔레트 — 저휘도 웜 뉴트럴 배경 + 채도 낮은 테라코타 accent 하나.
+// 다이나믹 컬러(기기별 배경화면 색)를 안 쓰고 고정하기로 한 결정(계획 §1)에 따라
+// 이 값들이 실제로 화면에 나오는 색이다.
+val DarkPrimary = Color(0xFFC98B6B)
+val DarkOnPrimary = Color(0xFF3A1F13)
+val DarkPrimaryContainer = Color(0xFF4E3225)
+val DarkOnPrimaryContainer = Color(0xFFF0C9AE)
+val DarkSecondary = Color(0xFFB8AFA3)
+val DarkOnSecondary = Color(0xFF272420)
+val DarkBackground = Color(0xFF15141A)
+val DarkOnBackground = Color(0xFFEDE6DD)
+val DarkSurface = Color(0xFF15141A)
+val DarkOnSurface = Color(0xFFEDE6DD)
+val DarkSurfaceVariant = Color(0xFF2A2830)
+val DarkOnSurfaceVariant = Color(0xFFC9C1B8)
+val DarkSurfaceContainerLowest = Color(0xFF0F0E12)
+val DarkSurfaceContainerLow = Color(0xFF1B1A20)
+val DarkSurfaceContainer = Color(0xFF201F26)
+val DarkSurfaceContainerHigh = Color(0xFF2B2A31)
+val DarkSurfaceContainerHighest = Color(0xFF36343C)
+val DarkOutline = Color(0xFF8A8378)
+val DarkOutlineVariant = Color(0xFF423F45)
+val DarkError = Color(0xFFE0665A)
+val DarkOnError = Color(0xFF3A0C08)
+val DarkErrorContainer = Color(0xFF5C1F17)
+val DarkOnErrorContainer = Color(0xFFFFDAD3)
+
+// 라이트 팔레트 — 지금은 토글 UI가 없어 안 쓰이지만(다크 우선 결정, 계획 §1),
+// 나중에 라이트 모드 토글을 붙일 때 배선만 하면 되도록 정의는 해둔다.
+val LightPrimary = Color(0xFF8B4A2E)
+val LightOnPrimary = Color(0xFFFFFFFF)
+val LightPrimaryContainer = Color(0xFFFFDBC8)
+val LightOnPrimaryContainer = Color(0xFF341003)
+val LightSecondary = Color(0xFF6F6357)
+val LightOnSecondary = Color(0xFFFFFFFF)
+val LightBackground = Color(0xFFFFF8F3)
+val LightOnBackground = Color(0xFF201A14)
+val LightSurface = Color(0xFFFFF8F3)
+val LightOnSurface = Color(0xFF201A14)
+val LightSurfaceVariant = Color(0xFFF0E0D3)
+val LightOnSurfaceVariant = Color(0xFF504539)
+val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
+val LightSurfaceContainerLow = Color(0xFFFAF1E9)
+val LightSurfaceContainer = Color(0xFFF5EBE0)
+val LightSurfaceContainerHigh = Color(0xFFEFE5D8)
+val LightSurfaceContainerHighest = Color(0xFFE9DFD1)
+val LightOutline = Color(0xFF827567)
+val LightOutlineVariant = Color(0xFFD5C7B7)
+val LightError = Color(0xFFBA1B1B)
+val LightOnError = Color(0xFFFFFFFF)
+val LightErrorContainer = Color(0xFFFFDAD3)
+val LightOnErrorContainer = Color(0xFF410001)
