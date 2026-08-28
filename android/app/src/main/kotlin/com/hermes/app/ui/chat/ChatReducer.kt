@@ -16,6 +16,9 @@ object ChatReducer {
     fun appendUserMessage(messages: List<ChatMessage>, text: String): List<ChatMessage> =
         messages + ChatMessage.User(id = newId(), text = text)
 
+    fun appendSystemNotice(messages: List<ChatMessage>, text: String): List<ChatMessage> =
+        messages + ChatMessage.SystemNotice(id = newId(), text = text)
+
     fun startAssistantTurn(messages: List<ChatMessage>): List<ChatMessage> =
         messages + ChatMessage.AssistantTurn(id = newId())
 

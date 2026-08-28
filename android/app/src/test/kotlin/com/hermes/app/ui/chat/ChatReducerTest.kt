@@ -154,4 +154,12 @@ class ChatReducerTest {
         messages = ChatReducer.applyEvent(messages, RunEvent.parse(unknown)!!)
         assertEquals(beforeUnknown, messages)
     }
+
+    @Test
+    fun `appendSystemNotice adds a SystemNotice with the given text`() {
+        val result = ChatReducer.appendSystemNotice(emptyList(), "업로드 실패: 네트워크 오류")
+
+        val notice = result.single() as ChatMessage.SystemNotice
+        assertEquals("업로드 실패: 네트워크 오류", notice.text)
+    }
 }

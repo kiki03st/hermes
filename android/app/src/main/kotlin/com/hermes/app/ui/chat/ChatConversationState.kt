@@ -119,6 +119,12 @@ class ChatConversationState(
         }
     }
 
+    /** 업로드 실패 등 run 파이프라인을 안 타는 에러를 채팅에 표시한다. */
+    fun reportSystemNotice(text: String) {
+        messages = ChatReducer.appendSystemNotice(messages, text)
+        revision++
+    }
+
     private fun collect(runId: String) {
         scope.launch {
             client().events(runId)
