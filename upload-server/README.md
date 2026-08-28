@@ -5,24 +5,57 @@
 건드리지 않는다. 저장된 파일은 게이트웨이 쪽 에이전트가 이미 가진 `file`/
 `vision_analyze` 툴로 읽는다(경로는 채팅 텍스트로 전달됨, 앱 쪽 구현 참고).
 
-## 설치 및 실행
+## 설치 및 실행 (수동 — 지금은 이게 정상)
 
-```bash
+**자동시작(로그온 시 작업 스케줄러)은 아직 안 만들어둠** — 외부 접속(Cloudflare
+named tunnel, 도메인 확보되면) 도입할 때 게이트웨이 자동시작이랑 같이 묶어서 설정
+예정. 그 전까지는 폰으로 파일/이미지 첨부를 쓰고 싶을 때마다 이 서버를 직접 켜야
+한다.
+
+```powershell
 cd upload-server
 python -m pip install -e ".[dev]"
 
-# 필수: 폰 앱이 쓰는 것과 같은 API_SERVER_KEY
-set UPLOAD_SERVER_API_KEY=<게이트웨이 API_SERVER_KEY와 동일한 값>
-# 선택 (기본값은 config.py 참고: host=0.0.0.0, port=8643, retention=14일, max=100MB)
-set UPLOAD_SERVER_HOST=172.30.1.101
-set UPLOAD_SERVER_INBOX_DIR=C:\hermes\uploads\inbox
+# 필수: 폰 앱 설정 화면의 "API 키"와 반드시 동일한 값(같은 Bearer 키 재사용)
+$env:UPLOAD_SERVER_API_KEY = "<게이트웨이 API_SERVER_KEY와 동일한 값>"
+# Wi-Fi NIC 주소로 명시 바인딩 — 0.0.0.0으로 하면 공인 IP NIC에도 리스닝된다
+$env:UPLOAD_SERVER_HOST = "172.30.1.101"
+$env:UPLOAD_SERVER_INBOX_DIR = "C:\hermes\upload-server\uploads\inbox"
 
-hermes-upload-server
+python -m upload_server
 ```
 
-`docs/setup-windows.md`의 게이트웨이 방화벽 설정과 동일한 패턴으로, 이 서버의
-포트(기본 8643)도 폰이 붙는 Wi-Fi NIC 주소로만 인바운드를 열어야 한다 — 공인 IP
-NIC는 열지 않는다.
+(`hermes-upload-server` 명령도 동일하게 동작 — `pyproject.toml`의 entry point.)
+
+## 방화벽 (최초 1회만)
+
+게이트웨이(8642)와 완전히 같은 패턴 — 관리자 PowerShell에서:
+
+```powershell
+New-NetFirewallRule -DisplayName "Hermes Upload Server (LAN only)" `
+  -Direction Inbound -Protocol TCP -LocalPort 8643 -Action Allow `
+  -Profile Any -LocalAddress 172.30.1.101 -RemoteAddress 172.30.1.0/24
+```
+
+**실측으로 확인된 함정** (2026-08-29, `docs/windows-migration.md` §7.9와 동일한
+원인): 이 PC의 Wi-Fi NIC(`172.30.1.101`)는 `NetworkCategory`가 **Public**으로
+분류돼 있고, `python.exe`(정확히는 이 서버를 실행하는
+`...\Programs\Python\Python312\python.exe`)에 대한 Public **Block** 인바운드 룰이
+이미 2개 걸려 있었다. Windows Firewall은 Block이 Allow를 항상 이기므로, 위 Allow
+룰만 추가해서는 폰에서 여전히 연결이 안 됐다 — 아래로 그 Block 룰을 **비활성화**
+(삭제 아님)해야 실제로 뚫린다:
+
+```powershell
+# 1. 확인
+Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True |
+  Where-Object { ($_ | Get-NetFirewallApplicationFilter).Program -like '*python312\python.exe*' } |
+  Select-Object DisplayName, Enabled
+
+# 2. 비활성화
+Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True |
+  Where-Object { ($_ | Get-NetFirewallApplicationFilter).Program -like '*python312\python.exe*' } |
+  Disable-NetFirewallRule
+```
 
 ## 테스트
 
