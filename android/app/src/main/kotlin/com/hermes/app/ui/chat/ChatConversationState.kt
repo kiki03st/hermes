@@ -23,6 +23,7 @@ class ChatConversationState(
     private val scope: CoroutineScope,
     private val sessionKey: () -> String?,
     private val client: () -> RunsClient,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     var messages: List<ChatMessage> by mutableStateOf(emptyList())
         private set
@@ -40,6 +41,13 @@ class ChatConversationState(
     // (실측 확인, 2026-08-29 — 두 턴을 연속 보냈는데 두 번째 턴에서 첫 번째 턴 얘기를
     // 서버가 전혀 몰랐다).
     private var currentRunId: String? = null
+
+    // IDLE_RESET_MS 이상 조용했으면 체이닝을 끊는다 — 화면 기록은 안 지우고(스크롤해서
+    // 계속 보임) 서버로 나가는 맥락 연결만 조용히 새로 시작한다. 알렉사/구글 어시스턴트 같은
+    // 실제 음성비서들이 쓰는 "대화 세션 자연 소멸" 방식 — 사용자가 수동으로 지울 필요 없이
+    // 오래된 화제가 최근 질문에 섞여드는 걸 막는다.
+    private var lastInteractionAtMs: Long = 0L
+
     private var pendingOnComplete: ((ChatMessage.AssistantTurn) -> Unit)? = null
 
     /** [onComplete]는 이 run이 끝날 때(성공/실패/취소로 [isRunning]이 false가 될 때) 마지막
@@ -56,7 +64,10 @@ class ChatConversationState(
         revision++
         isRunning = true
 
-        val previousRunId = currentRunId
+        val nowMs = now()
+        val previousRunId = if (nowMs - lastInteractionAtMs > IDLE_RESET_MS) null else currentRunId
+        lastInteractionAtMs = nowMs
+
         scope.launch {
             when (
                 val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), previousRunId) }
@@ -115,5 +126,9 @@ class ChatConversationState(
         val turn = messages.lastOrNull() as? ChatMessage.AssistantTurn ?: return
         pendingOnComplete?.invoke(turn)
         pendingOnComplete = null
+    }
+
+    companion object {
+        const val IDLE_RESET_MS = 30 * 60 * 1000L
     }
 }
