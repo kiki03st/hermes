@@ -1,0 +1,22 @@
+[project]
+name = "hermes-upload-server"
+version = "0.1.0"
+description = "폰에서 Hermes 에이전트로 파일/이미지를 릴레이하는 독립 업로드 서버"
+requires-python = ">=3.10"
+dependencies = ["aiohttp>=3.9,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+hermes-upload-server = "upload_server.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
