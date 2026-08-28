@@ -22,5 +22,9 @@ android/.cxx/
 hermes-config/config.yaml
 hermes-config/.env
 
+# 로컬 Claude Code 스킬 설치 (npx skills add 등) — 개인 도구 설치이지 리포 소스가 아니다
+.agents/
+.claude/
+
 # OS
 .DS_Store
