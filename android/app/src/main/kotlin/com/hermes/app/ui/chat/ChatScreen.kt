@@ -1,8 +1,11 @@
 package com.hermes.app.ui.chat
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,15 +32,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.hermes.app.FileUploadClient
 import com.hermes.app.HermesRuntime
+import com.hermes.app.UploadOutcome
 import com.hermes.app.WakeWordService
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 메인 챗봇 화면 — 입력은 전부 `/v1/runs`(승인 게이트 포함) 하나로만 나간다(계획 결정 #1).
@@ -59,6 +68,47 @@ fun ChatScreen(state: ChatConversationState, onOpenSettings: () -> Unit) {
     var input by remember { mutableStateOf("") }
     val pendingApproval = (state.messages.lastOrNull() as? ChatMessage.AssistantTurn)?.approval
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var uploading by remember { mutableStateOf(false) }
+
+    val attachLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploading = true
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                try {
+                    val selected = readSelectedFile(context, uri)
+                    if (selected == null) {
+                        UploadOutcome.Failure(0, "파일을 읽을 수 없습니다")
+                    } else {
+                        FileUploadClient(
+                            uploadServerUrl = { HermesRuntime.currentSettings.uploadServerUrl },
+                            apiKey = { HermesRuntime.currentSettings.apiKey },
+                        ).upload(selected.name, selected.mimeType, selected.bytes)
+                    }
+                } catch (e: Exception) {
+                    // ContentResolver 쪽(SecurityException/IOException 등)은 FileUploadClient의
+                    // 내부 try-catch 범위 밖이라 여기서 따로 잡는다 — 안 잡으면 scope.launch가
+                    // 예외를 삼키지 않고 그대로 앱을 죽인다.
+                    UploadOutcome.Failure(0, "파일 읽기 오류: ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }
+            uploading = false
+            when (outcome) {
+                is UploadOutcome.Success -> {
+                    val caption = input
+                    input = ""
+                    state.submit(
+                        "$caption\n\n첨부 파일 경로: ${outcome.path}\n${outcome.note}".trim(),
+                    )
+                }
+                is UploadOutcome.Failure ->
+                    state.reportSystemNotice("파일 업로드 실패 (${outcome.statusCode}): ${outcome.message}")
+            }
+        }
+    }
 
     // 웨이크워드가 항상 듣기 중이면 그쪽 AudioRecord랑 이 버튼의 STT가 마이크를 동시에
     // 잡으려고 해서 충돌한다(마이크는 단일 클라이언트 제약) — 켜져있을 때만, 시작 전엔
@@ -138,7 +188,9 @@ fun ChatScreen(state: ChatConversationState, onOpenSettings: () -> Unit) {
                 onValueChange = { input = it },
                 enabled = pendingApproval == null,
                 sending = state.isRunning,
+                uploading = uploading,
                 onMicClick = ::onMicClick,
+                onAttachClick = { attachLauncher.launch("*/*") },
                 onSend = {
                     val text = input
                     input = ""
@@ -155,7 +207,9 @@ private fun InputBar(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
     sending: Boolean,
+    uploading: Boolean,
     onMicClick: () -> Unit,
+    onAttachClick: () -> Unit,
     onSend: () -> Unit,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -167,6 +221,10 @@ private fun InputBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            IconButton(onClick = onAttachClick, enabled = enabled && !sending && !uploading) {
+                // 클립 이모지 — 마이크 버튼(🎙)과 같은 이유로 material-icons-extended 없이 표시
+                Text(if (uploading) "…" else "📎")
+            }
             IconButton(onClick = onMicClick, enabled = enabled && !sending) {
                 // 마이크 이모지 — material-icons-extended 의존성 없이 표시 (Wear 앱과 같은 방식)
                 Text("🎙")
@@ -186,4 +244,22 @@ private fun InputBar(
             }
         }
     }
+}
+
+private data class SelectedFile(val name: String, val mimeType: String, val bytes: ByteArray)
+
+/** [android.provider.OpenableColumns.DISPLAY_NAME]으로 원본 파일명을 얻는다 —
+ * `content://` URI엔 실제 경로가 없어 이 방법이 표준이다. */
+private fun readSelectedFile(context: Context, uri: Uri): SelectedFile? {
+    val resolver = context.contentResolver
+    val mimeType = resolver.getType(uri) ?: "application/octet-stream"
+    var name = "file"
+    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex >= 0 && cursor.moveToFirst()) {
+            cursor.getString(nameIndex)?.let { name = it }
+        }
+    }
+    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+    return SelectedFile(name, mimeType, bytes)
 }
