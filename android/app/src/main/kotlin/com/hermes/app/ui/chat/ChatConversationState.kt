@@ -3,10 +3,10 @@ package com.hermes.app.ui.chat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.hermes.app.ConversationTurn
 import com.hermes.app.RunEvent
 import com.hermes.app.RunStartOutcome
 import com.hermes.app.RunsClient
-import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
@@ -39,17 +39,18 @@ class ChatConversationState(
 
     private var currentRunId: String? = null
 
-    // /v1/runs가 대화를 이어가는 진짜 키 — 같은 값을 계속 보내야 서버가 이전 턴을 이어서
-    // 안다(Hermes 게이트웨이 소스 `_handle_runs` 확인, 2026-08-29). 처음엔 run_id를
-    // previous_response_id로 체이닝하는 방식을 썼었는데, 그건 /v1/responses 전용 별도
-    // 저장소를 가리키는 필드라 /v1/runs에선 안 먹혀서(게이트웨이 로그에 history=0으로
-    // 계속 찍힘) 이 방식으로 정정했다.
-    private var sessionId: String = UUID.randomUUID().toString()
-
-    // IDLE_RESET_MS 이상 조용했으면 sessionId를 새로 발급해서 새 대화로 취급한다. 화면
-    // 기록은 안 지우고(스크롤해서 계속 보임) 서버로 나가는 맥락 연결만 조용히 새로 시작한다.
-    // 알렉사/구글 어시스턴트 같은 실제 음성비서들이 쓰는 "대화 세션 자연 소멸" 방식 —
-    // 사용자가 수동으로 지울 필요 없이 오래된 화제가 최근 질문에 섞여드는 걸 막는다.
+    // /v1/runs가 대화를 이어가는 진짜(유일한) 방법은 body의 conversation_history 배열이다
+    // — session_id는 저장 그룹핑만 할 뿐 게이트웨이가 그 세션의 이전 대화를 다시 모델에
+    // 넣어주는 코드가 없고, previous_response_id는 /v1/responses 전용 별도 저장소를 가리켜서
+    // /v1/runs에선 안 먹힌다(둘 다 실측 확인 — 라이브 게이트웨이 로그에 history=0만 계속
+    // 찍혔다, 2026-08-29). 그래서 여기서 로컬 messages를 매번 변환해서 같이 보낸다.
+    //
+    // historyResetAtIndex보다 앞의 메시지는 서버로 보내는 이력에서 제외한다(화면엔 계속
+    // 보임, 스크롤 가능) — IDLE_RESET_MS 이상 조용했으면 이 인덱스를 현재 끝으로 올려서
+    // 새 대화로 취급한다. 알렉사/구글 어시스턴트 같은 실제 음성비서들이 쓰는 "대화 세션
+    // 자연 소멸" 방식 — 사용자가 수동으로 지울 필요 없이 오래된 화제가 최근 질문에
+    // 섞여드는 걸 막는다.
+    private var historyResetAtIndex: Int = 0
     private var lastInteractionAtMs: Long = 0L
 
     private var pendingOnComplete: ((ChatMessage.AssistantTurn) -> Unit)? = null
@@ -63,20 +64,22 @@ class ChatConversationState(
     fun submit(text: String, onComplete: ((ChatMessage.AssistantTurn) -> Unit)? = null) {
         if (text.isBlank() || isRunning) return
 
+        val nowMs = now()
+        if (nowMs - lastInteractionAtMs > IDLE_RESET_MS) {
+            historyResetAtIndex = messages.size
+        }
+        lastInteractionAtMs = nowMs
+
+        val history = buildConversationHistory(messages.drop(historyResetAtIndex))
+
         pendingOnComplete = onComplete
         messages = ChatReducer.startAssistantTurn(ChatReducer.appendUserMessage(messages, text))
         revision++
         isRunning = true
 
-        val nowMs = now()
-        if (nowMs - lastInteractionAtMs > IDLE_RESET_MS) {
-            sessionId = UUID.randomUUID().toString()
-        }
-        lastInteractionAtMs = nowMs
-
         scope.launch {
             when (
-                val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), sessionId) }
+                val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), history) }
             ) {
                 is RunStartOutcome.Started -> {
                     currentRunId = outcome.runId
@@ -88,6 +91,19 @@ class ChatConversationState(
             }
         }
     }
+
+    /** [ChatMessage.SystemNotice]는 실제 대화 턴이 아니라 UI용 알림(취소됨 등)이라 뺀다.
+     * 답 없이 끝난(에러 등) [ChatMessage.AssistantTurn]도 빈 assistant 턴을 보내면 모델이
+     * 헷갈릴 수 있어 제외한다. */
+    private fun buildConversationHistory(source: List<ChatMessage>): List<ConversationTurn> =
+        source.mapNotNull { msg ->
+            when (msg) {
+                is ChatMessage.User -> ConversationTurn("user", msg.text)
+                is ChatMessage.AssistantTurn -> msg.textSoFar.takeIf { it.isNotBlank() }
+                    ?.let { ConversationTurn("assistant", it) }
+                is ChatMessage.SystemNotice -> null
+            }
+        }
 
     fun resolveApproval(turnId: String, choice: String) {
         val id = currentRunId ?: return

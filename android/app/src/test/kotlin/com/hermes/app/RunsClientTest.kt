@@ -70,17 +70,26 @@ class RunsClientTest {
     }
 
     @Test
-    fun `startRun sends session_id only when provided`() {
-        // session_id가 진짜 대화 이어가기 키다(previous_response_id는 /v1/responses 전용
-        // 별도 저장소를 가리켜서 /v1/runs에선 안 먹힌다 — 실측 확인, 2026-08-29).
+    fun `startRun sends conversation_history only when non-empty`() {
+        // conversation_history가 /v1/runs에서 실제로 대화를 이어가는 유일한 방법이다 —
+        // session_id는 저장 그룹핑만 하고 모델에 이전 대화를 다시 안 넣어준다, previous_
+        // response_id는 /v1/responses 전용 별도 저장소를 가리켜서 안 먹힌다(둘 다 실측
+        // 확인, 2026-08-29: 라이브 게이트웨이 로그에 history=0만 계속 찍혔다).
         val transport = FakeRunsHttpTransport(HttpResult(202, """{"run_id": "run_abc"}"""))
         val client = RunsClient(transport, FakeSseTransport(emptyList()), serverUrl = { "http://host:8642" }, apiKey = { "k" })
 
         client.startRun("hi")
-        assertTrue(!transport.lastPostBody!!.contains("\"session_id\":\"") )
+        assertTrue(!transport.lastPostBody!!.contains("\"conversation_history\":["))
 
-        client.startRun("hi", sessionId = "conversation-1")
-        assertTrue(transport.lastPostBody!!.contains("\"session_id\":\"conversation-1\""))
+        client.startRun(
+            "hi",
+            conversationHistory = listOf(
+                ConversationTurn("user", "내가 제일 좋아하는 색은 보라색이야"),
+                ConversationTurn("assistant", "보라색이군요, 기억할게요."),
+            ),
+        )
+        assertTrue(transport.lastPostBody!!.contains("\"role\":\"user\",\"content\":\"내가 제일 좋아하는 색은 보라색이야\""))
+        assertTrue(transport.lastPostBody!!.contains("\"role\":\"assistant\",\"content\":\"보라색이군요, 기억할게요.\""))
     }
 
     @Test

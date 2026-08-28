@@ -18,18 +18,33 @@ sealed interface ApprovalOutcome {
     data class Failure(val statusCode: Int, val message: String) : ApprovalOutcome
 }
 
-/** [sessionId]는 대화(단기 트랜스크립트) 스코프다 — Hermes 게이트웨이 소스
- * (`gateway/platforms/api_server.py`의 `_handle_runs`) 확인 결과, `/v1/runs`가 대화를
- * 이어가는 진짜 키는 이 body 필드다. **`previous_response_id`가 아니다** — 그 필드는
- * `/v1/responses` 엔드포인트 전용 별도 저장소(`_response_store`)를 찾는 것이라 여기 run_id를
- * 넣어봐야 그 저장소에 없어서 조용히 무시된다(실측 확인, 2026-08-29 — `previous_response_id`로
- * 처음 고쳤을 때도 게이트웨이 로그에 `history=0`이 계속 찍혀서 원인 재조사 후 정정).
- * 같은 [sessionId]를 계속 보내면 이어지고, 안 보내면(null) 매번 새 대화(서버가 `run_id`를
- * 세션 id로 대신 씀). */
+/** [ConversationTurn]은 `/v1/runs`의 `conversation_history` 배열 항목 하나(`role`/`content`).
+ * **이게 `/v1/runs`에서 실제로 대화를 이어가는 유일한 방법이다** — Hermes 게이트웨이 소스
+ * (`gateway/platforms/api_server.py`의 `_handle_runs`)를 직접 읽고 라이브 게이트웨이에
+ * 실측까지 해서 확인했다(2026-08-29):
+ * - `session_id` body 필드는 저장 그룹핑(`hermes sessions list`에 보이는 것)만 할 뿐,
+ *   `_handle_runs`가 그 세션의 저장된 이전 대화를 다시 모델에 넣어주는 코드 자체가 없다 —
+ *   같은 session_id를 계속 보내도 게이트웨이 로그의 `agent.turn_context`엔 매번
+ *   `history=0`이 찍힌다(실측).
+ * - `previous_response_id`는 `/v1/responses` 엔드포인트 전용 별도 저장소(`_response_store`)를
+ *   찾는 것이라 `/v1/runs`가 만든 run_id를 넣어봐야 그 저장소에 없어서 조용히 무시된다.
+ * - 반면 body에 `conversation_history: [{role, content}, ...]`를 직접 채워 보내면
+ *   `agent.turn_context`에 `history=<개수>`가 정확히 찍히고 모델이 실제로 그 내용을 씀
+ *   (실측: 가짜 "좋아하는 색은 보라색" 이력 2개를 넣었더니 `history=2` + 정확히
+ *   "보라색"이라고 답함).
+ *
+ * 그래서 대화 이어가기 책임은 서버가 아니라 **클라이언트**(`ChatConversationState`)에
+ * 있다 — 로컬에 이미 들고 있는 메시지 목록을 매번 이 형태로 변환해서 같이 보내야 한다.
+ */
+data class ConversationTurn(val role: String, val content: String)
+
+@Serializable
+private data class HistoryEntry(val role: String, val content: String)
+
 @Serializable
 private data class StartRunRequest(
     val input: String,
-    @SerialName("session_id") val sessionId: String? = null,
+    @SerialName("conversation_history") val conversationHistory: List<HistoryEntry>? = null,
 )
 
 @Serializable
@@ -67,10 +82,17 @@ class RunsClient(
     private val serverUrl: () -> String,
     private val apiKey: () -> String,
 ) {
-    fun startRun(input: String, sessionKey: String? = null, sessionId: String? = null): RunStartOutcome {
+    fun startRun(
+        input: String,
+        sessionKey: String? = null,
+        conversationHistory: List<ConversationTurn> = emptyList(),
+    ): RunStartOutcome {
         val body = HermesJson.encodeToString(
             StartRunRequest.serializer(),
-            StartRunRequest(input, sessionId),
+            StartRunRequest(
+                input,
+                conversationHistory.takeIf { it.isNotEmpty() }?.map { HistoryEntry(it.role, it.content) },
+            ),
         )
         val headers = authHeaders() + sessionKeyHeaders(sessionKey)
         val result = transport.postJson(baseUrl() + HermesApi.RUNS_PATH, headers, body)
