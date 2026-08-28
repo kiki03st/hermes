@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import com.hermes.app.RunEvent
 import com.hermes.app.RunStartOutcome
 import com.hermes.app.RunsClient
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
@@ -36,16 +37,19 @@ class ChatConversationState(
     var revision: Int by mutableStateOf(0)
         private set
 
-    // 직전에 시작된 run의 id — 다음 submit()이 이걸 previous_response_id로 넘겨서 서버가
-    // 대화를 이어가게 한다. 안 넘기면 매 요청이 서버 입장에서 완전히 새 대화로 시작된다
-    // (실측 확인, 2026-08-29 — 두 턴을 연속 보냈는데 두 번째 턴에서 첫 번째 턴 얘기를
-    // 서버가 전혀 몰랐다).
     private var currentRunId: String? = null
 
-    // IDLE_RESET_MS 이상 조용했으면 체이닝을 끊는다 — 화면 기록은 안 지우고(스크롤해서
-    // 계속 보임) 서버로 나가는 맥락 연결만 조용히 새로 시작한다. 알렉사/구글 어시스턴트 같은
-    // 실제 음성비서들이 쓰는 "대화 세션 자연 소멸" 방식 — 사용자가 수동으로 지울 필요 없이
-    // 오래된 화제가 최근 질문에 섞여드는 걸 막는다.
+    // /v1/runs가 대화를 이어가는 진짜 키 — 같은 값을 계속 보내야 서버가 이전 턴을 이어서
+    // 안다(Hermes 게이트웨이 소스 `_handle_runs` 확인, 2026-08-29). 처음엔 run_id를
+    // previous_response_id로 체이닝하는 방식을 썼었는데, 그건 /v1/responses 전용 별도
+    // 저장소를 가리키는 필드라 /v1/runs에선 안 먹혀서(게이트웨이 로그에 history=0으로
+    // 계속 찍힘) 이 방식으로 정정했다.
+    private var sessionId: String = UUID.randomUUID().toString()
+
+    // IDLE_RESET_MS 이상 조용했으면 sessionId를 새로 발급해서 새 대화로 취급한다. 화면
+    // 기록은 안 지우고(스크롤해서 계속 보임) 서버로 나가는 맥락 연결만 조용히 새로 시작한다.
+    // 알렉사/구글 어시스턴트 같은 실제 음성비서들이 쓰는 "대화 세션 자연 소멸" 방식 —
+    // 사용자가 수동으로 지울 필요 없이 오래된 화제가 최근 질문에 섞여드는 걸 막는다.
     private var lastInteractionAtMs: Long = 0L
 
     private var pendingOnComplete: ((ChatMessage.AssistantTurn) -> Unit)? = null
@@ -65,12 +69,14 @@ class ChatConversationState(
         isRunning = true
 
         val nowMs = now()
-        val previousRunId = if (nowMs - lastInteractionAtMs > IDLE_RESET_MS) null else currentRunId
+        if (nowMs - lastInteractionAtMs > IDLE_RESET_MS) {
+            sessionId = UUID.randomUUID().toString()
+        }
         lastInteractionAtMs = nowMs
 
         scope.launch {
             when (
-                val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), previousRunId) }
+                val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), sessionId) }
             ) {
                 is RunStartOutcome.Started -> {
                     currentRunId = outcome.runId

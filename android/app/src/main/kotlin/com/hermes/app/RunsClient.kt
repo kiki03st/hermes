@@ -18,14 +18,18 @@ sealed interface ApprovalOutcome {
     data class Failure(val statusCode: Int, val message: String) : ApprovalOutcome
 }
 
-/** [previousResponseId]는 직전 run의 id를 그대로 넘겨 서버가 그 run의 대화 맥락을 이어서
- * 쓰게 한다 — 안 보내면(null) 매 요청이 서버 입장에서 완전히 새 대화로 시작된다(실측 확인,
- * 2026-08-29: 두 턴을 연속으로 보냈는데 세션이 서로 남남으로 남아 후속 질문의 맥락을
- * 서버가 전혀 몰랐다). */
+/** [sessionId]는 대화(단기 트랜스크립트) 스코프다 — Hermes 게이트웨이 소스
+ * (`gateway/platforms/api_server.py`의 `_handle_runs`) 확인 결과, `/v1/runs`가 대화를
+ * 이어가는 진짜 키는 이 body 필드다. **`previous_response_id`가 아니다** — 그 필드는
+ * `/v1/responses` 엔드포인트 전용 별도 저장소(`_response_store`)를 찾는 것이라 여기 run_id를
+ * 넣어봐야 그 저장소에 없어서 조용히 무시된다(실측 확인, 2026-08-29 — `previous_response_id`로
+ * 처음 고쳤을 때도 게이트웨이 로그에 `history=0`이 계속 찍혀서 원인 재조사 후 정정).
+ * 같은 [sessionId]를 계속 보내면 이어지고, 안 보내면(null) 매번 새 대화(서버가 `run_id`를
+ * 세션 id로 대신 씀). */
 @Serializable
 private data class StartRunRequest(
     val input: String,
-    @SerialName("previous_response_id") val previousResponseId: String? = null,
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 @Serializable
@@ -63,10 +67,10 @@ class RunsClient(
     private val serverUrl: () -> String,
     private val apiKey: () -> String,
 ) {
-    fun startRun(input: String, sessionKey: String? = null, previousResponseId: String? = null): RunStartOutcome {
+    fun startRun(input: String, sessionKey: String? = null, sessionId: String? = null): RunStartOutcome {
         val body = HermesJson.encodeToString(
             StartRunRequest.serializer(),
-            StartRunRequest(input, previousResponseId),
+            StartRunRequest(input, sessionId),
         )
         val headers = authHeaders() + sessionKeyHeaders(sessionKey)
         val result = transport.postJson(baseUrl() + HermesApi.RUNS_PATH, headers, body)

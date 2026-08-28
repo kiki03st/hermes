@@ -70,15 +70,17 @@ class RunsClientTest {
     }
 
     @Test
-    fun `startRun sends previous_response_id only when provided`() {
+    fun `startRun sends session_id only when provided`() {
+        // session_id가 진짜 대화 이어가기 키다(previous_response_id는 /v1/responses 전용
+        // 별도 저장소를 가리켜서 /v1/runs에선 안 먹힌다 — 실측 확인, 2026-08-29).
         val transport = FakeRunsHttpTransport(HttpResult(202, """{"run_id": "run_abc"}"""))
         val client = RunsClient(transport, FakeSseTransport(emptyList()), serverUrl = { "http://host:8642" }, apiKey = { "k" })
 
         client.startRun("hi")
-        assertTrue(!transport.lastPostBody!!.contains("previous_response_id") || transport.lastPostBody!!.contains("\"previous_response_id\":null"))
+        assertTrue(!transport.lastPostBody!!.contains("\"session_id\":\"") )
 
-        client.startRun("hi", previousResponseId = "run_prior")
-        assertTrue(transport.lastPostBody!!.contains("\"previous_response_id\":\"run_prior\""))
+        client.startRun("hi", sessionId = "conversation-1")
+        assertTrue(transport.lastPostBody!!.contains("\"session_id\":\"conversation-1\""))
     }
 
     @Test
