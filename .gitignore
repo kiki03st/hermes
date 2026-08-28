@@ -17,6 +17,9 @@ android/**/*.iml
 android/captures/
 android/.cxx/
 
+# Vosk 웨이크워드 모델 — 리포 밖에서 수동으로 받는 대용량 에셋(docs/wake-word-setup.md)
+android/app/src/main/assets/
+
 # Env / secrets
 .env
 hermes-config/config.yaml

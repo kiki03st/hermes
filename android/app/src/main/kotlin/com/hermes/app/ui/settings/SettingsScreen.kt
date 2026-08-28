@@ -32,6 +32,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,6 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hermes.app.HermesApiClient
 import com.hermes.app.SettingsStore
 import com.hermes.app.UrlConnectionHttpTransport
@@ -116,6 +120,32 @@ fun SettingsScreen(settingsStore: SettingsStore, onBack: () -> Unit) {
         context.stopService(Intent(context, WakeWordService::class.java))
     }
 
+    // 배터리 최적화 예외 / 오버레이 권한 상태 — 둘 다 시스템 설정 화면 갔다가 돌아왔을 때
+    // (ON_RESUME) 다시 확인해야 반영된다, 값 자체를 옵저버블로 감시할 방법이 OS에 없어서
+    // 옵저버 하나로 같이 갱신한다.
+    var batteryExempt by remember { mutableStateOf(false) }
+    var overlayGranted by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        fun refreshBatteryExempt() {
+            val powerManager = context.getSystemService(PowerManager::class.java)
+            batteryExempt = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+        }
+        fun refreshOverlayGranted() {
+            overlayGranted = AndroidSettings.canDrawOverlays(context)
+        }
+        refreshBatteryExempt()
+        refreshOverlayGranted()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshBatteryExempt()
+                refreshOverlayGranted()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -182,18 +212,39 @@ fun SettingsScreen(settingsStore: SettingsStore, onBack: () -> Unit) {
                 )
             }
             if (settings?.wakeWordEnabled == true) {
-                OutlinedButton(onClick = {
-                    val powerManager = context.getSystemService(PowerManager::class.java)
-                    if (powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true) {
+                Text(
+                    text = if (batteryExempt) "배터리 최적화 예외 설정됨" else "배터리 최적화 예외 설정 안 됨",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (batteryExempt) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!batteryExempt) {
+                    OutlinedButton(onClick = {
                         context.startActivity(
                             Intent(
                                 AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                                 Uri.parse("package:${context.packageName}"),
                             ),
                         )
+                    }) {
+                        Text("배터리 최적화 예외 설정")
                     }
-                }) {
-                    Text("배터리 최적화 예외 설정")
+                }
+                Text(
+                    text = if (overlayGranted) "다른 앱 위에 표시 허용됨" else "다른 앱 위에 표시 허용 안 됨",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (overlayGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!overlayGranted) {
+                    OutlinedButton(onClick = {
+                        context.startActivity(
+                            Intent(
+                                AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
+                        )
+                    }) {
+                        Text("오버레이 권한 설정")
+                    }
                 }
             }
         }
