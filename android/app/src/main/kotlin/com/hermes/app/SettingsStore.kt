@@ -15,6 +15,9 @@ private val Context.dataStore by preferencesDataStore(name = "hermes_settings")
 data class HermesSettings(
     val serverUrl: String = "",
     val apiKey: String = "",
+    /** 별도 업로드 서버(`upload-server/`, 게이트웨이와 무관한 독립 프로세스)의 URL —
+     * 첨부 파일을 이 주소로 올린 뒤 반환된 경로를 채팅 텍스트에 실어 게이트웨이로 보낸다. */
+    val uploadServerUrl: String = "",
     /** 기기 단위로 한 번 생성해 절대 안 바뀌는 장기 기억 스코프(X-Hermes-Session-Key).
      * 대화창(session_id)을 몇 번을 리셋해도 이 값은 그대로라 Hermes의 memory 도구가
      * 쌓아온 내용(이름, 선호도 등)은 계속 이어진다. */
@@ -29,6 +32,7 @@ data class HermesSettings(
 class SettingsStore(private val context: Context) {
     private val serverUrlKey = stringPreferencesKey("server_url")
     private val apiKeyKey = stringPreferencesKey("api_key")
+    private val uploadServerUrlKey = stringPreferencesKey("upload_server_url")
     private val longTermMemoryKeyKey = stringPreferencesKey("long_term_memory_key")
     private val wakeWordEnabledKey = booleanPreferencesKey("wake_word_enabled")
 
@@ -38,6 +42,7 @@ class SettingsStore(private val context: Context) {
         HermesSettings(
             serverUrl = prefs[serverUrlKey] ?: BuildConfig.DEFAULT_SERVER_URL,
             apiKey = prefs[apiKeyKey] ?: BuildConfig.DEFAULT_API_KEY,
+            uploadServerUrl = prefs[uploadServerUrlKey] ?: BuildConfig.DEFAULT_UPLOAD_SERVER_URL,
             longTermMemoryKey = prefs[longTermMemoryKeyKey] ?: "",
             wakeWordEnabled = prefs[wakeWordEnabledKey] ?: false,
         )
@@ -45,10 +50,11 @@ class SettingsStore(private val context: Context) {
 
     suspend fun snapshot(): HermesSettings = settingsFlow.first()
 
-    suspend fun update(serverUrl: String, apiKey: String) {
+    suspend fun update(serverUrl: String, apiKey: String, uploadServerUrl: String) {
         context.dataStore.edit { prefs ->
             prefs[serverUrlKey] = serverUrl
             prefs[apiKeyKey] = apiKey
+            prefs[uploadServerUrlKey] = uploadServerUrl
         }
     }
 

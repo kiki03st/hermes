@@ -67,12 +67,14 @@ fun SettingsScreen(settingsStore: SettingsStore, onBack: () -> Unit) {
 
     var serverUrlInput by remember { mutableStateOf("") }
     var apiKeyInput by remember { mutableStateOf("") }
+    var uploadServerUrlInput by remember { mutableStateOf("") }
     var healthStatus by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(settings) {
         settings?.let {
             serverUrlInput = it.serverUrl
             apiKeyInput = it.apiKey
+            uploadServerUrlInput = it.uploadServerUrl
         }
     }
 
@@ -179,8 +181,16 @@ fun SettingsScreen(settingsStore: SettingsStore, onBack: () -> Unit) {
                 label = { Text("API 키") },
                 modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedTextField(
+                value = uploadServerUrlInput,
+                onValueChange = { uploadServerUrlInput = it },
+                label = { Text("업로드 서버 URL (예: http://192.168.0.10:8643)") },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { scope.launch { settingsStore.update(serverUrlInput, apiKeyInput) } }) {
+                Button(onClick = {
+                    scope.launch { settingsStore.update(serverUrlInput, apiKeyInput, uploadServerUrlInput) }
+                }) {
                     Text("저장")
                 }
                 OutlinedButton(onClick = {

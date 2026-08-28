@@ -33,6 +33,10 @@ android {
             "String", "DEFAULT_API_KEY",
             "\"${localProperties.getProperty("hermes.apiKey", "")}\"",
         )
+        buildConfigField(
+            "String", "DEFAULT_UPLOAD_SERVER_URL",
+            "\"${localProperties.getProperty("hermes.uploadServerUrl", "")}\"",
+        )
     }
 
     buildTypes {
