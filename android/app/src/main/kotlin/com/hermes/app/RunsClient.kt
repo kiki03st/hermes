@@ -18,8 +18,15 @@ sealed interface ApprovalOutcome {
     data class Failure(val statusCode: Int, val message: String) : ApprovalOutcome
 }
 
+/** [previousResponseId]는 직전 run의 id를 그대로 넘겨 서버가 그 run의 대화 맥락을 이어서
+ * 쓰게 한다 — 안 보내면(null) 매 요청이 서버 입장에서 완전히 새 대화로 시작된다(실측 확인,
+ * 2026-08-29: 두 턴을 연속으로 보냈는데 세션이 서로 남남으로 남아 후속 질문의 맥락을
+ * 서버가 전혀 몰랐다). */
 @Serializable
-private data class StartRunRequest(val input: String)
+private data class StartRunRequest(
+    val input: String,
+    @SerialName("previous_response_id") val previousResponseId: String? = null,
+)
 
 @Serializable
 private data class StartRunResponse(
@@ -56,8 +63,11 @@ class RunsClient(
     private val serverUrl: () -> String,
     private val apiKey: () -> String,
 ) {
-    fun startRun(input: String, sessionKey: String? = null): RunStartOutcome {
-        val body = HermesJson.encodeToString(StartRunRequest.serializer(), StartRunRequest(input))
+    fun startRun(input: String, sessionKey: String? = null, previousResponseId: String? = null): RunStartOutcome {
+        val body = HermesJson.encodeToString(
+            StartRunRequest.serializer(),
+            StartRunRequest(input, previousResponseId),
+        )
         val headers = authHeaders() + sessionKeyHeaders(sessionKey)
         val result = transport.postJson(baseUrl() + HermesApi.RUNS_PATH, headers, body)
 

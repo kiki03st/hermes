@@ -7,6 +7,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /**
@@ -28,9 +29,24 @@ class VoiceOutputHelper(context: Context) {
         }
     }
 
-    fun speak(text: String) {
-        if (audioManager?.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hermes-response")
+    /** [onDone]은 낭독이 끝나면(에러/스킵 포함) 정확히 한 번 불린다 — 호출자가 이걸로
+     * "지금은 마이크를 다시 켜도 된다" 신호를 받는다(웨이크워드 리스너가 자기 TTS 소리를
+     * 자기가 듣고 오탐하는 걸 막으려면 낭독 중엔 리스닝을 꺼둬야 한다). 벨소리 모드 때문에
+     * 애초에 낭독을 안 하는 경우도 [onDone]을 즉시 불러야 호출자가 계속 멈춰있지 않는다. */
+    fun speak(text: String, onDone: () -> Unit = {}) {
+        val engine = tts
+        if (audioManager?.ringerMode != AudioManager.RINGER_MODE_NORMAL || engine == null) {
+            onDone()
+            return
+        }
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) = onDone()
+            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+            override fun onError(utteranceId: String?) = onDone()
+        })
+        val queued = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hermes-response")
+        if (queued != TextToSpeech.SUCCESS) onDone()
     }
 
     fun vibrateShort() {

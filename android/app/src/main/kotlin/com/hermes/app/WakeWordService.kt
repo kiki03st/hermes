@@ -58,6 +58,10 @@ class WakeWordService : Service() {
     private var model: Model? = null
     private var vad: VadSilero? = null
     private var listenJob: Job? = null
+
+    // deliverAnswer()가 HermesRuntime의 애플리케이션 스코프 코루틴(다른 스레드일 수 있음)에서
+    // 이 값을 쓰고, runListenLoop()는 자기 코루틴에서 읽는다 — 스레드 간 가시성 보장 필요.
+    @Volatile
     private var paused = false
     private val overlay by lazy { WakeWordOverlay(applicationContext) }
     private val voiceOutput by lazy { VoiceOutputHelper(applicationContext) }
@@ -77,7 +81,18 @@ class WakeWordService : Service() {
         loadModelAndStart()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    /** 채팅 화면의 마이크 버튼(`ui/chat/ChatScreen.kt`)도 마이크를 쓴다 — 웨이크워드가
+     * 항상 듣기 중일 때 동시에 두 소비자가 `AudioRecord`를 잡으면 한쪽이 깨지거나 빈 결과가
+     * 나온다(마이크는 단일 클라이언트 제약). 그 화면이 STT를 직접 시작하기 전/후에 이
+     * action으로 일시정지/재개를 요청한다 — 웨이크워드 자체 감지 후 헤드리스 STT로 넘어갈
+     * 때 이미 쓰던 것과 같은 원리를 외부에서도 트리거할 수 있게 한 것뿐이다. */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PAUSE_FOR_EXTERNAL_STT -> paused = true
+            ACTION_RESUME_AFTER_EXTERNAL_STT -> resumeListening()
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         listenJob?.cancel()
@@ -258,10 +273,15 @@ class WakeWordService : Service() {
 
     /** 오버레이는 STT 캡처가 끝나자마자 사라지고 답변은 그 뒤에 비동기로 도착한다 — 답이
      * 왔다는 걸 앱을 열지 않고도 알 수 있어야 해서 낭독+진동+알림 세 채널로 전달한다.
-     * 벨소리 모드 존중은 [VoiceOutputHelper]가 알아서 한다(무음/진동 모드에선 낭독 생략 등). */
+     * 벨소리 모드 존중은 [VoiceOutputHelper]가 알아서 한다(무음/진동 모드에선 낭독 생략 등).
+     *
+     * ⚠️ 낭독 전에 반드시 리스닝을 멈추고 낭독이 끝난 뒤에만 재개한다 — 안 그러면 마이크가
+     * 스피커로 나오는 자기 TTS 목소리를 그대로 주워듣고 "제우스"로 오탐한다(실측 확인,
+     * 2026-08-29 — 사용자가 답변 낭독 중에도 오버레이가 다시 뜨는 걸 보고함). */
     private fun deliverAnswer(turn: ChatMessage.AssistantTurn) {
         val answer = turn.error ?: turn.textSoFar.ifBlank { "응답이 없습니다" }
-        voiceOutput.speak(answer)
+        paused = true
+        voiceOutput.speak(answer) { resumeListening() }
         voiceOutput.vibrateShort()
         postAnswerNotification(answer)
     }
@@ -307,5 +327,12 @@ class WakeWordService : Service() {
         private const val ANSWER_NOTIFICATION_ID = 43
         private const val WAKE_WORD = "제우스"
         private val GRAMMAR = "[\"$WAKE_WORD\", \"[unk]\"]"
+
+        /** [ui.chat.ChatScreen]의 마이크 버튼이 마이크 단일 클라이언트 충돌을 피하려고
+         * 보내는 명령. 서비스가 안 떠있으면(웨이크워드 꺼짐) 호출 자체를 안 해야 한다 —
+         * `startService`가 없던 서비스를 새로 띄워버리기 때문(호출부에서
+         * `HermesRuntime.currentSettings.wakeWordEnabled`로 먼저 확인). */
+        const val ACTION_PAUSE_FOR_EXTERNAL_STT = "com.hermes.app.ACTION_PAUSE_FOR_EXTERNAL_STT"
+        const val ACTION_RESUME_AFTER_EXTERNAL_STT = "com.hermes.app.ACTION_RESUME_AFTER_EXTERNAL_STT"
     }
 }

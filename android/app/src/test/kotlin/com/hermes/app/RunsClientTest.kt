@@ -70,6 +70,18 @@ class RunsClientTest {
     }
 
     @Test
+    fun `startRun sends previous_response_id only when provided`() {
+        val transport = FakeRunsHttpTransport(HttpResult(202, """{"run_id": "run_abc"}"""))
+        val client = RunsClient(transport, FakeSseTransport(emptyList()), serverUrl = { "http://host:8642" }, apiKey = { "k" })
+
+        client.startRun("hi")
+        assertTrue(!transport.lastPostBody!!.contains("previous_response_id") || transport.lastPostBody!!.contains("\"previous_response_id\":null"))
+
+        client.startRun("hi", previousResponseId = "run_prior")
+        assertTrue(transport.lastPostBody!!.contains("\"previous_response_id\":\"run_prior\""))
+    }
+
+    @Test
     fun `startRun surfaces failure on non-2xx status`() {
         val transport = FakeRunsHttpTransport(HttpResult(429, "Too many concurrent runs"))
         val client = RunsClient(transport, FakeSseTransport(emptyList()), serverUrl = { "http://host:8642" }, apiKey = { "k" })

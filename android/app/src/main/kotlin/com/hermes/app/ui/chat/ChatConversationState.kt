@@ -35,6 +35,10 @@ class ChatConversationState(
     var revision: Int by mutableStateOf(0)
         private set
 
+    // 직전에 시작된 run의 id — 다음 submit()이 이걸 previous_response_id로 넘겨서 서버가
+    // 대화를 이어가게 한다. 안 넘기면 매 요청이 서버 입장에서 완전히 새 대화로 시작된다
+    // (실측 확인, 2026-08-29 — 두 턴을 연속 보냈는데 두 번째 턴에서 첫 번째 턴 얘기를
+    // 서버가 전혀 몰랐다).
     private var currentRunId: String? = null
     private var pendingOnComplete: ((ChatMessage.AssistantTurn) -> Unit)? = null
 
@@ -52,8 +56,11 @@ class ChatConversationState(
         revision++
         isRunning = true
 
+        val previousRunId = currentRunId
         scope.launch {
-            when (val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey()) }) {
+            when (
+                val outcome = withContext(Dispatchers.IO) { client().startRun(text, sessionKey(), previousRunId) }
+            ) {
                 is RunStartOutcome.Started -> {
                     currentRunId = outcome.runId
                     collect(outcome.runId)
