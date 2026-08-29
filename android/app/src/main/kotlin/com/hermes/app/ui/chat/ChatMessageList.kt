@@ -188,11 +188,11 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
                     modifier = Modifier.widthIn(max = 280.dp).clickable { onImageClick(media) },
                 )
             } else {
-                Text(
-                    text = "이미지를 표시할 수 없습니다",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                // 비트맵 디코드 실패 = 이미지가 아닌 파일(마크다운, PDF 등) — 다운로드 자체는
+                // 이미 성공해서 바이트가 메모리에 있다(실측 확인, 2026-08-29: 예전엔 여기서
+                // "이미지를 표시할 수 없습니다"만 띄우고 바이트를 그냥 버렸다). 일반 파일
+                // 칩으로 대신 그려서 저장/공유는 계속 가능하게 한다.
+                FileChip(filename = media.filename, bytes = status.bytes)
             }
         }
 
@@ -202,6 +202,49 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+    }
+}
+
+/** 이미지로 디코드 안 되는 생성 파일(마크다운, PDF 등) — 전체화면 미리보기는 범위 밖
+ * (YAGNI), 파일명 + 저장/공유 버튼만 준다. [bytes]는 이미 다운로드 완료된 상태라 버튼
+ * 누르면 바로 저장/공유되고 재다운로드는 안 한다. */
+@Composable
+private fun FileChip(filename: String, bytes: ByteArray) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val mimeType = remember(filename) { guessMimeType(filename) }
+
+    Row(
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium,
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("📄")
+        Text(
+            text = filename,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = 160.dp),
+        )
+        IconButton(onClick = {
+            scope.launch {
+                val saved = withContext(Dispatchers.IO) { saveFileToDownloads(context, filename, bytes, mimeType) }
+                val message = if (saved) "다운로드 폴더에 저장됨" else "저장 실패"
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        }) {
+            Text("⬇")
+        }
+        IconButton(onClick = {
+            scope.launch { withContext(Dispatchers.IO) { shareFile(context, filename, bytes, mimeType) } }
+        }) {
+            Text("📤")
+        }
     }
 }
 
@@ -278,7 +321,7 @@ private fun FullscreenImageViewer(media: ChatMedia, onDismiss: () -> Unit) {
                 }
                 IconButton(onClick = {
                     scope.launch {
-                        withContext(Dispatchers.IO) { shareImage(context, media.filename, loaded.bytes) }
+                        withContext(Dispatchers.IO) { shareFile(context, media.filename, loaded.bytes, "image/png") }
                     }
                 }) {
                     Text("📤", color = androidx.compose.ui.graphics.Color.White)

@@ -40,17 +40,38 @@ fun saveImageToGallery(context: Context, filename: String, bytes: ByteArray): Bo
     return true
 }
 
+/** 이미지가 아닌 파일(마크다운, PDF 등)을 `Downloads/Hermes/`에 저장한다 —
+ * [saveImageToGallery]와 같은 구조, 컬렉션만 `MediaStore.Downloads`로 다르다(이미지는
+ * 갤러리에 보여야 자연스럽고, 그 외 파일은 다운로드 폴더가 사용자 기대에 맞는다). */
+fun saveFileToDownloads(context: Context, filename: String, bytes: ByteArray, mimeType: String): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+
+    val resolver = context.contentResolver
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Hermes")
+        put(MediaStore.Downloads.IS_PENDING, 1)
+    }
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+    resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return false
+    values.clear()
+    values.put(MediaStore.Downloads.IS_PENDING, 0)
+    resolver.update(uri, values, null, null)
+    return true
+}
+
 /** [bytes]를 `cacheDir/shared/`에 임시로 쓰고 `FileProvider`로 얻은 `content://` URI로
- * 시스템 공유 시트를 띄운다 — 다운로드(갤러리 저장)와 독립적, 저장 안 해도 바로
- * 공유된다(설계 문서 결정). */
-fun shareImage(context: Context, filename: String, bytes: ByteArray) {
+ * 시스템 공유 시트를 띄운다 — 다운로드(저장)와 독립적, 저장 안 해도 바로 공유된다
+ * (설계 문서 결정). [mimeType]은 이미지든 다른 파일이든 호출부가 맞게 넘긴다. */
+fun shareFile(context: Context, filename: String, bytes: ByteArray, mimeType: String) {
     val sharedDir = File(context.cacheDir, "shared").apply { mkdirs() }
     val file = File(sharedDir, filename)
     file.writeBytes(bytes)
 
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "image/png"
+        type = mimeType
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
