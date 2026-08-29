@@ -301,8 +301,13 @@ private fun DiagramThumbnail(media: ChatMedia, html: String, bytes: ByteArray, o
                             if (isAsync) {
                                 addJavascriptInterface(
                                     RenderCompleteBridge {
-                                        val bmp = captureWebViewBitmap(this)
-                                        if (bmp != null) captured = bmp else failed = true
+                                        // JS가 "다 그렸다"고 알려온 시점이라도 실제 컴포지터
+                                        // 커밋과는 경쟁이 있을 수 있다 — postVisualStateCallback으로
+                                        // 한 번 더 확인 후 캡처한다(실측 버그, 2026-08-30).
+                                        requestCaptureWhenPainted(this) {
+                                            val bmp = captureWebViewBitmap(this)
+                                            if (bmp != null) captured = bmp else failed = true
+                                        }
                                     },
                                     "AndroidRenderBridge",
                                 )
@@ -311,8 +316,11 @@ private fun DiagramThumbnail(media: ChatMedia, html: String, bytes: ByteArray, o
                                 settings.loadWithOverviewMode = true
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
-                                        val bmp = view?.let { captureWebViewBitmap(it) }
-                                        if (bmp != null) captured = bmp else failed = true
+                                        val wv = view ?: return
+                                        requestCaptureWhenPainted(wv) {
+                                            val bmp = captureWebViewBitmap(wv)
+                                            if (bmp != null) captured = bmp else failed = true
+                                        }
                                     }
                                 }
                             }
