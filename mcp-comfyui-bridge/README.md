@@ -29,7 +29,7 @@ python -m pip install -e ".[dev]"
 |---|---|
 | `COMFYUI_BASE_URL` | `http://127.0.0.1:8188` |
 | `COMFYUI_TIMEOUT_SECONDS` | `120` |
-| `COMFYUI_BRIDGE_OUTPUT_DIR` | `mcp-comfyui-bridge/generated/` |
+| `COMFYUI_BRIDGE_OUTPUT_DIR` | `upload-server/generated/comfyui/` — `upload-server`가 폰 앱에 서빙하는 위치(설계 문서: `docs/superpowers/specs/2026-08-29-image-viewer-design.md`) |
 
 ## 테스트
 
@@ -43,4 +43,5 @@ python -m pytest -v
 hermes mcp list   # comfyui-bridge가 뜨는지
 ```
 
-폰에서 "그림 그려줘" 요청 → `generated/` 안에 실제 PNG 파일이 생기는지 확인.
+폰에서 "그림 그려줘" 요청 → `upload-server/generated/comfyui/` 안에 실제 PNG
+파일이 생기는지 확인.
