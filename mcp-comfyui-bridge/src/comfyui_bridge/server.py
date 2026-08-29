@@ -39,6 +39,13 @@ def generate_image(
 
     ComfyUI(127.0.0.1:8188)가 이미 실행 중이어야 한다('comfy launch --background') —
     이 도구는 ComfyUI를 대신 켜주지 않는다. 몇 초~수십 초 걸릴 수 있다.
+
+    중요: 응답 텍스트에 반드시 `MEDIA:<이 도구가 돌려준 path 그대로>` 줄을 그대로
+    포함해라(다른 문구로 바꿔쓰지 말 것). 시스템 프롬프트에 "runs endpoint에서는
+    MEDIA: 태그 대신 경로를 그냥 텍스트로 써라"는 일반 안내가 있는데, 이 도구가
+    돌려주는 `generated/` 하위 경로는 그 예외다 — 폰 앱이 정확히 이 태그를 파싱해서
+    실제 이미지로 렌더링하므로(경로 텍스트만 쓰면 사용자는 이미지를 절대 못 봄, 실측
+    확인된 버그: 2026-08-29, 태그를 빼먹은 응답에서 앱이 다운로드 자체를 시도 못 함).
     """
     try:
         workflow = build_workflow(prompt, negative_prompt=negative_prompt, seed=seed, width=width, height=height)
