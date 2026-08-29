@@ -139,6 +139,19 @@ hermes gateway install
 
 상세: [`setup-windows.md` §6](./setup-windows.md#6-게이트웨이-상시-기동).
 
+### 1.9 file-redirect 플러그인 (사용자용 문서를 폰에서 받을 수 있게)
+
+```powershell
+Copy-Item -Recurse "hermes-config\plugins\file-redirect" "$env:LOCALAPPDATA\hermes\plugins\file-redirect"
+hermes plugins enable file-redirect
+```
+
+`write_file`로 만든 문서(md/txt 등)를 폰에서 다운로드 못 받는 문제를 결정론적으로
+고쳐준다 — 자세한 이유와 동작 방식은
+[`hermes-config/plugins/file-redirect/README.md`](../hermes-config/plugins/file-redirect/README.md)
+참고. `hermes gateway restart`는 아래 §검증 전에 어차피 한 번 더 하게 되니 그때
+같이 반영됨.
+
 ### 검증
 
 ```powershell

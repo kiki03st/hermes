@@ -180,13 +180,23 @@ mcp_servers:
     trust: full
 
   # --- 사용자용 문서 생성 (file-export, 이 리포 신규 구현) ---
-  # 로컬 디스크에 텍스트 파일 하나 쓰는 좁은 MCP 서버 — export_file 함수 하나만
-  # 노출한다. write_file(Hermes 내장)과 달리 upload-server가 폰에 서빙하는 위치에
-  # 저장해서, 리포트/정리/요약을 만들 때 폰에서 다운로드/미리보기가 가능해진다
-  # (설계 문서: docs/superpowers/specs/2026-08-29-file-export-design.md).
+  # 로컬 디스크에 텍스트 파일 하나 쓰는 좁은 MCP 서버 — save_document_for_user_to_view_on_phone
+  # 함수 하나만 노출한다. write_file(Hermes 내장)과 달리 upload-server가 폰에
+  # 서빙하는 위치에 저장해서, 리포트/정리/요약을 만들 때 폰에서 다운로드/미리보기가
+  # 가능해진다(설계 문서: docs/superpowers/specs/2026-08-29-file-export-design.md).
+  # 단, 모델이 이 도구 대신 write_file을 계속 고르는 문제가 있어서 아래
+  # file-redirect 플러그인으로 결정론적으로 보강했다 — 이 MCP 서버는 그대로 켜둔다
+  # (모델이 어쩌다 이걸 고르면 정상 동작하고, 안 고르면 file-redirect가 받아준다).
   file-export:
     command: "file-export"
     trust: full
+
+# file-redirect 플러그인: write_file로 홈 디렉터리에 바로 떨군 문서를
+# upload-server/generated/files/로 강제 리다이렉트 + MEDIA: 태그 자동 삽입.
+# 설치: hermes-config/plugins/file-redirect/README.md 참고.
+plugins:
+  enabled:
+    - file-redirect
 
 # API 서버 설정은 .env 우선이지만 config.yaml에도 둘 수 있다 (env가 항상 이긴다).
 # env.example 을 이미 채웠다면 이 블록은 생략해도 된다.

@@ -1,0 +1,10 @@
+name: file-redirect
+version: "1.0"
+description: >
+  Deterministically redirects write_file calls that drop a document
+  (.md/.txt/.csv/.json) directly in the home directory into
+  upload-server/generated/files/, and appends a MEDIA: tag to the final
+  response so the phone app's download/preview pipeline picks it up —
+  bypasses unreliable model tool-choice between write_file and
+  file-export's save_document_for_user_to_view_on_phone (2026-08-29,
+  docs/superpowers/specs/2026-08-29-file-export-design.md).
