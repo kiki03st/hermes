@@ -39,11 +39,14 @@ _GENERATED_FILES_DIR = Path(
 _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 # pre_tool_call과 transform_llm_output 사이에 리다이렉트 사실을 넘겨주는 세션별
-# 상태 — 모델의 응답 텍스트를 못 믿는다(실측 확인, 2026-08-29: 리다이렉트가 실제로
+# 상태 — 모델의 응답 텍스트를 못 믿는다(실측 확인, 2026-08-29/30: 리다이렉트가 실제로
 # 성공했는데도 모델이 자기가 원래 요청한 옛 경로를 그대로 사용자에게 말했다 — tool
 # 결과의 resolved_path를 안 챙겨 봄). 그래서 정규식으로 텍스트에서 경로를 찾는 대신,
 # "이 세션에서 방금 리다이렉트가 실제로 일어났는가"를 직접 기억해뒀다가 쓴다.
-_last_redirect_by_session: dict[str, str] = {}
+# 값은 (옛 경로 후보들, 새 경로) — 옛 경로가 응답 텍스트에 남아있으면 새 경로로
+# 바꿔치기한다(실측: 사용자가 채팅에서 옛 경로를 그대로 보고 "경로가 다르다"고
+# 헷갈렸다, 2026-08-30).
+_last_redirect_by_session: dict[str, tuple[list[str], str]] = {}
 
 
 def _sanitize_filename(name: str) -> str:
@@ -84,21 +87,32 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
     _GENERATED_FILES_DIR.mkdir(parents=True, exist_ok=True)
     new_path = _GENERATED_FILES_DIR / _sanitize_filename(abs_target.name)
     if session_id:
-        _last_redirect_by_session[session_id] = str(new_path)
+        # 모델이 원래 넘긴 그대로(raw_path — 상대경로일 수도 있음)와, 그걸 절대경로로
+        # 풀어낸 형태(abs_target) 둘 다 후보로 남긴다 — 응답 프로즈에서 모델이 둘 중
+        # 뭘 그대로 되풀이할지 알 수 없어서 둘 다 치환 대상으로 잡는다.
+        old_candidates = list({raw_path, str(abs_target)})
+        _last_redirect_by_session[session_id] = (old_candidates, str(new_path))
     return {"action": "modify", "args": {"path": str(new_path)}}
 
 
 def inject_media_tag(response_text: str = "", session_id: str = "", **kwargs):
     """transform_llm_output — 이번 턴에 [redirect_home_dir_writes]가 실제로
-    리다이렉트한 파일이 있으면 그 경로로 MEDIA: 태그를 붙인다. 모델의 응답 텍스트
-    안에서 경로를 찾지 않는다 — 모델이 리다이렉트 사실 자체를 못 챙겨서 옛 경로를
-    말할 수 있기 때문(위 주석 참고)."""
-    path = _last_redirect_by_session.pop(session_id, None) if session_id else None
-    if not path:
+    리다이렉트한 파일이 있으면, 응답 텍스트에 남아있는 옛 경로를 새 경로로
+    바꿔치고 MEDIA: 태그를 붙인다. 모델이 리다이렉트 사실 자체를 못 챙겨서 옛
+    경로를 그대로 말하는 경우가 있어(위 주석 참고), 그 흔적을 지운다 — 안 지우면
+    채팅에 옛 경로와 새 경로가 같이 보여서 사용자가 "경로가 다르다"고 헷갈린다
+    (실측, 2026-08-30)."""
+    entry = _last_redirect_by_session.pop(session_id, None) if session_id else None
+    if not entry:
         return None
-    if f"MEDIA:{path}" in (response_text or ""):
-        return None
-    return (response_text or "").rstrip() + f"\n\nMEDIA:{path}"
+    old_candidates, path = entry
+    text = response_text or ""
+    for old in old_candidates:
+        if old:
+            text = text.replace(old, path)
+    if f"MEDIA:{path}" not in text:
+        text = text.rstrip() + f"\n\nMEDIA:{path}"
+    return text
 
 
 def register(ctx):
