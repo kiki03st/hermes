@@ -70,6 +70,21 @@ iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 
 `hermes chat`으로 아무 말이나 걸어서 응답 오는지 먼저 확인하고 다음으로 간다.
 
+### 1.2b 기본 모델 (Sonnet)
+
+설치 직후 기본값은 보통 Haiku급 저비용 모델이다 — 실측 확인(2026-08-29): 이 모델로는
+스킬/도구 선택이 부정확해지고(예: 존재하지 않는 `terminal` 도구를 계속 찾아 헤맴),
+`MEDIA:` 태그 지시를 놓치는 등 이 리포의 기능들과 안 맞는 동작이 잦았다. Sonnet으로
+바꾸면 확연히 안정적이다:
+
+```powershell
+hermes config set model.default anthropic/claude-sonnet-5
+hermes gateway restart
+```
+
+(커스텀 브릿지 프로바이더를 쓰면 실제 모델 ID가 다를 수 있다 — 그 프로바이더의
+`/v1/models`로 사용 가능한 이름을 먼저 확인할 것, §1.2 참고.)
+
 ### 1.3 API 서버 활성화
 
 `%LOCALAPPDATA%\hermes` 안의 env 파일(`hermes-config/env.example` 템플릿 참고)에 최소 3줄:
@@ -152,13 +167,43 @@ hermes plugins enable file-redirect
 참고. `hermes gateway restart`는 아래 §검증 전에 어차피 한 번 더 하게 되니 그때
 같이 반영됨.
 
+### 1.10 excalidraw 스킬 문서 수정 (불필요한 도구 호출 방지)
+
+Hermes가 기본 제공하는 `excalidraw` 스킬(`%LOCALAPPDATA%\hermes\skills\creative\excalidraw\SKILL.md`)
+원본은 "선택적으로 `terminal`로 `scripts/upload.py`를 실행해서 excalidraw.com에 업로드"하라고
+안내한다 — 근데 폰 채널(`api_server`)엔 애초에 `terminal` 도구 자체가 없다(§1.6과 같은 이유).
+그래서 다이어그램 하나 그릴 때마다 모델이 있지도 않은 도구를 `tool_search`로 몇 번씩
+찾아 헤매다가, 사용자에게 "터미널이 없어서 업로드 못 했다"는 불필요한 문구까지 붙여
+응답했다(실측, 2026-08-30). 어차피 이 리포는 `write_file`이 file-redirect 플러그인(§1.9)을
+거쳐 폰에 바로 렌더링되므로 업로드 자체가 불필요 — 그 단계를 스킬 문서에서 아예 뺐다.
+
+```powershell
+Copy-Item -Force "hermes-config\skills\excalidraw\SKILL.md" "$env:LOCALAPPDATA\hermes\skills\creative\excalidraw\SKILL.md"
+```
+
+파일 경로가 다르면(스킬 설치 위치가 버전마다 바뀔 수 있음) `hermes skills list`로 실제
+설치 경로를 먼저 확인할 것. 코드 변경이 아니라 문서(prompt) 수정이라 게이트웨이
+재시작 없이 다음 턴부터 바로 반영된다.
+
 ### 검증
 
 ```powershell
 curl.exe -H "Authorization: Bearer $env:API_SERVER_KEY" http://<HOST>:8642/health
 ```
 
-`{"status":"ok",...}`가 나오면 완료.
+`{"status":"ok",...}`가 나오면 완료. 재시작 직후엔 **게이트웨이 프로세스가 중복으로
+남아있지 않은지** 한 번 확인하는 게 좋다(실측, 2026-08-30: 로그온 자동시작 항목과
+수동 `hermes gateway restart`가 겹쳐서 유휴 상태의 중복 프로세스가 하나 더 떠 있었던
+적이 있음 — 기능엔 지장 없지만 리소스 낭비):
+
+```powershell
+Get-Process python*, python3.11 -ErrorAction SilentlyContinue |
+  Where-Object { $_.Path -like "*hermes*" } |
+  Select-Object Id, Path, StartTime
+```
+
+`hermes_cli.main gateway run`으로 실행 중인 프로세스가 여러 개면, 실제로 8642를
+리스닝 중인 것(`netstat -ano | findstr 8642`로 확인)만 남기고 나머지는 정리한다.
 
 ---
 
