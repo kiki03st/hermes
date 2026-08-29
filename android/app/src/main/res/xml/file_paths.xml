@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 공유 버튼 전용 — cacheDir/shared/ 밑에 임시로 쓴 이미지만 FileProvider로 노출한다
+     (설계 문서: 이미지 뷰어 다운로드/공유 기능, ChatMessageList.kt의 shareImage 참고). -->
+<paths>
+    <cache-path name="shared_images" path="shared/" />
+</paths>

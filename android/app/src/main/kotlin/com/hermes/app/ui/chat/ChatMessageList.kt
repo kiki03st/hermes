@@ -1,12 +1,16 @@
 package com.hermes.app.ui.chat
 
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,16 +23,30 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ChatMessageList(
@@ -47,6 +65,12 @@ fun ChatMessageList(
         }
     }
 
+    // LazyColumn 안에 두면 다이얼로그가 리스트 클리핑에 갇히므로 여기(리스트 밖)에서
+    // 호이스팅한다 — 클로드/챗GPT식 전체화면 뷰어(설계 문서: 이미지 다운로드/공유 기능).
+    // MediaImage가 Loaded 상태일 때만 클릭 가능하게 하므로 [ChatMedia.status]는 항상
+    // Loaded임이 보장된다.
+    var fullscreenMedia by remember { mutableStateOf<ChatMedia?>(null) }
+
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxWidth(),
@@ -56,10 +80,15 @@ fun ChatMessageList(
         items(messages, key = { it.id }) { message ->
             when (message) {
                 is ChatMessage.User -> UserBubble(message)
-                is ChatMessage.AssistantTurn -> AssistantBubble(message, onApprovalChoice)
+                is ChatMessage.AssistantTurn ->
+                    AssistantBubble(message, onApprovalChoice, onImageClick = { fullscreenMedia = it })
                 is ChatMessage.SystemNotice -> NoticeRow(message)
             }
         }
+    }
+
+    fullscreenMedia?.let { media ->
+        FullscreenImageViewer(media = media, onDismiss = { fullscreenMedia = null })
     }
 }
 
@@ -82,7 +111,11 @@ private fun UserBubble(message: ChatMessage.User) {
 }
 
 @Composable
-private fun AssistantBubble(turn: ChatMessage.AssistantTurn, onApprovalChoice: (String, String) -> Unit) {
+private fun AssistantBubble(
+    turn: ChatMessage.AssistantTurn,
+    onApprovalChoice: (String, String) -> Unit,
+    onImageClick: (ChatMedia) -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Card(
             modifier = Modifier.widthIn(max = 320.dp),
@@ -117,7 +150,7 @@ private fun AssistantBubble(turn: ChatMessage.AssistantTurn, onApprovalChoice: (
                     TypingIndicator()
                 }
 
-                turn.media.forEach { media -> MediaImage(media) }
+                turn.media.forEach { media -> MediaImage(media, onImageClick) }
 
                 turn.error?.let {
                     Text(
@@ -138,7 +171,7 @@ private fun AssistantBubble(turn: ChatMessage.AssistantTurn, onApprovalChoice: (
 /** 원본 `MEDIA:` 텍스트 줄은 [ChatReducer]가 이미 떼어냈다(승인된 방향 — 경로 문자열은
  * 사용자에게 무의미하므로 안 보여준다) — 여기선 이 자리에 이미지/로딩/에러만 그린다. */
 @Composable
-private fun MediaImage(media: ChatMedia) {
+private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
     when (val status = media.status) {
         is MediaStatus.Loading ->
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -152,7 +185,7 @@ private fun MediaImage(media: ChatMedia) {
                 Image(
                     bitmap = bitmap,
                     contentDescription = media.filename,
-                    modifier = Modifier.widthIn(max = 280.dp),
+                    modifier = Modifier.widthIn(max = 280.dp).clickable { onImageClick(media) },
                 )
             } else {
                 Text(
@@ -169,6 +202,89 @@ private fun MediaImage(media: ChatMedia) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+    }
+}
+
+/**
+ * 클로드/챗GPT식 전체화면 이미지 뷰어(설계 문서: 이미지 뷰어 다운로드/공유 기능,
+ * 2026-08-29). [Dialog]를 `usesPlatformDefaultWidth = false`로 써야 진짜 풀스크린이
+ * 된다(기본값은 다이얼로그를 화면보다 좁게 강제함). [media.status]는 호출부
+ * ([ChatMessageList])가 Loaded일 때만 이 컴포저블을 띄우므로 항상 [MediaStatus.Loaded]다.
+ */
+@Composable
+private fun FullscreenImageViewer(media: ChatMedia, onDismiss: () -> Unit) {
+    val loaded = media.status as? MediaStatus.Loaded ?: return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var scale by remember(media.id) { mutableStateOf(1f) }
+    var offset by remember(media.id) { mutableStateOf(Offset.Zero) }
+
+    val bitmap = remember(media.id) {
+        runCatching { BitmapFactory.decodeByteArray(loaded.bytes, 0, loaded.bytes.size)?.asImageBitmap() }
+            .getOrNull()
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black)
+                .clickable(onClick = onDismiss),
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = media.filename,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(media.id) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = clampZoom(scale * zoom)
+                                offset = if (scale <= 1f) Offset.Zero else offset + pan
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y,
+                        ),
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .background(
+                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.medium,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Text("✕", color = androidx.compose.ui.graphics.Color.White)
+                }
+                IconButton(onClick = {
+                    scope.launch {
+                        val saved = withContext(Dispatchers.IO) {
+                            saveImageToGallery(context, media.filename, loaded.bytes)
+                        }
+                        val message = if (saved) "갤러리에 저장됨" else "저장 실패"
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }) {
+                    Text("⬇", color = androidx.compose.ui.graphics.Color.White)
+                }
+                IconButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { shareImage(context, media.filename, loaded.bytes) }
+                    }
+                }) {
+                    Text("📤", color = androidx.compose.ui.graphics.Color.White)
+                }
+            }
+        }
     }
 }
 

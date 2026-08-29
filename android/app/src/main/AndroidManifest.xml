@@ -51,5 +51,17 @@
             android:name=".WakeWordService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- 이미지 뷰어 공유 버튼 전용 — cacheDir/shared/에 쓴 이미지를 content:// URI로
+             다른 앱에 노출한다(다운로드는 MediaStore를 직접 쓰므로 이 provider 불필요). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
