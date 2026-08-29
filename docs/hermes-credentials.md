@@ -122,8 +122,21 @@ TAVILY_API_KEY=tvly-...
 명시적으로 선택해야 동작한다** — 이게 웹검색과 다른 점이라 따로 적는다.
 
 ```bash
-hermes tools   # image_gen.provider를 fal / openai / xai / krea / nous 중에서 선택
+hermes tools   # 대화형 — image_gen.provider를 fal / openai / xai / krea / nous 중에서 선택
 ```
+
+비대화형(스크립트/에이전트)으로도 됨 — **2026-08-29 실측 확인**, FAL로 설정 후
+게이트웨이 재시작까지 하고 실제로 이미지가 생성되는 것까지 확인함:
+
+```bash
+hermes config set FAL_KEY "..."
+hermes config set image_gen.provider fal
+hermes gateway restart   # 안 하면 이미 떠있는 게이트웨이가 새 값을 안 읽음
+```
+
+`hermes config set image_gen.provider fal`은 "not a recognized config key" 경고를
+내지만 무시해도 된다 — CLI 화이트리스트가 이 키를 모를 뿐, `config.yaml`에
+`image_gen: {provider: fal}`로 정확히 저장되고(소스: `hermes_cli/tools_config.py`) 게이트웨이는 정상적으로 읽는다.
 
 | 프로바이더 | 필요한 키 |
 |---|---|
@@ -135,6 +148,13 @@ hermes tools   # image_gen.provider를 fal / openai / xai / krea / nous 중에�
 
 `FAL_KEY`를 `.env`에 넣어도 `image_gen.provider`가 다른 값으로 저장돼 있으면 무시된다 —
 안 되면 먼저 `hermes tools`에서 provider가 뭐로 돼 있는지부터 확인할 것.
+
+**ComfyUI(`comfyui` 스킬)는 이 방식과 별개고, 폰(`api_server` 플랫폼)에서는 못 쓴다** —
+2026-08-29 실측: ComfyUI는 `comfy` CLI를 터미널에서 실행해야 하는데 `api_server`
+플랫폼엔 `terminal`/`code_execution` 툴셋이 없다. 에이전트가 스킬은 찾아내도 실행할
+방법이 없어 다른 우회(HTML+puppeteer, Python PIL 등)만 반복하다 아무 이미지도 못
+만들었다. CLI 세션(`hermes chat`)에서 로컬 GPU로 그리고 싶을 때만 ComfyUI를 쓰고,
+폰에서 쓸 이미지 생성은 위 image_gen provider 방식만 쓸 것.
 
 ---
 
