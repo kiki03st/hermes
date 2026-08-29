@@ -29,5 +29,8 @@ hermes-config/.env
 .agents/
 .claude/
 
+# upload-server 런타임 산출물 — 실제 사용자가 올린 파일이 쌓이는 곳, 소스 아님
+upload-server/uploads/
+
 # OS
 .DS_Store
