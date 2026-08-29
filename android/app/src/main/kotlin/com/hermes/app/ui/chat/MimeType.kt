@@ -8,6 +8,12 @@ fun guessMimeType(filename: String): String {
     return _MIME_BY_EXTENSION[extension] ?: "application/octet-stream"
 }
 
+/** [mimeType]이 UTF-8 텍스트로 디코드해서 그대로 보여줘도 되는 형식인지 — 이거면
+ * `FileChip` 탭 시 원문 미리보기를 띄운다. "text/"로 시작하는 타입 전부 + `application/json`만
+ * (마크다운 서식 렌더링은 범위 밖, 원문 그대로만 보여준다, YAGNI). */
+fun isPreviewableText(mimeType: String): Boolean =
+    mimeType.startsWith("text/") || mimeType == "application/json"
+
 private val _MIME_BY_EXTENSION = mapOf(
     "md" to "text/markdown",
     "txt" to "text/plain",

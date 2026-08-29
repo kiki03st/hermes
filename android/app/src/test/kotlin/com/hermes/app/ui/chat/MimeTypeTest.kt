@@ -1,6 +1,8 @@
 package com.hermes.app.ui.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MimeTypeTest {
@@ -28,5 +30,21 @@ class MimeTypeTest {
     fun `guessMimeType falls back to octet-stream for unknown or missing extensions`() {
         assertEquals("application/octet-stream", guessMimeType("weird.xyz123"))
         assertEquals("application/octet-stream", guessMimeType("noextension"))
+    }
+
+    @Test
+    fun `isPreviewableText accepts text and json mime types`() {
+        assertTrue(isPreviewableText("text/markdown"))
+        assertTrue(isPreviewableText("text/plain"))
+        assertTrue(isPreviewableText("text/csv"))
+        assertTrue(isPreviewableText("application/json"))
+    }
+
+    @Test
+    fun `isPreviewableText rejects binary mime types`() {
+        assertFalse(isPreviewableText("application/pdf"))
+        assertFalse(isPreviewableText("application/zip"))
+        assertFalse(isPreviewableText("application/octet-stream"))
+        assertFalse(isPreviewableText("image/png"))
     }
 }

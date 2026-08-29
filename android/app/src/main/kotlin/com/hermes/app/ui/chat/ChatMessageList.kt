@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +71,8 @@ fun ChatMessageList(
     // MediaImage가 Loaded 상태일 때만 클릭 가능하게 하므로 [ChatMedia.status]는 항상
     // Loaded임이 보장된다.
     var fullscreenMedia by remember { mutableStateOf<ChatMedia?>(null) }
+    // 텍스트 파일(마크다운 등) 미리보기 — 같은 이유로 리스트 밖에서 호이스팅.
+    var previewMedia by remember { mutableStateOf<ChatMedia?>(null) }
 
     LazyColumn(
         state = listState,
@@ -80,8 +83,12 @@ fun ChatMessageList(
         items(messages, key = { it.id }) { message ->
             when (message) {
                 is ChatMessage.User -> UserBubble(message)
-                is ChatMessage.AssistantTurn ->
-                    AssistantBubble(message, onApprovalChoice, onImageClick = { fullscreenMedia = it })
+                is ChatMessage.AssistantTurn -> AssistantBubble(
+                    turn = message,
+                    onApprovalChoice = onApprovalChoice,
+                    onImageClick = { fullscreenMedia = it },
+                    onFileClick = { previewMedia = it },
+                )
                 is ChatMessage.SystemNotice -> NoticeRow(message)
             }
         }
@@ -89,6 +96,9 @@ fun ChatMessageList(
 
     fullscreenMedia?.let { media ->
         FullscreenImageViewer(media = media, onDismiss = { fullscreenMedia = null })
+    }
+    previewMedia?.let { media ->
+        TextPreviewDialog(media = media, onDismiss = { previewMedia = null })
     }
 }
 
@@ -115,6 +125,7 @@ private fun AssistantBubble(
     turn: ChatMessage.AssistantTurn,
     onApprovalChoice: (String, String) -> Unit,
     onImageClick: (ChatMedia) -> Unit,
+    onFileClick: (ChatMedia) -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Card(
@@ -150,7 +161,7 @@ private fun AssistantBubble(
                     TypingIndicator()
                 }
 
-                turn.media.forEach { media -> MediaImage(media, onImageClick) }
+                turn.media.forEach { media -> MediaImage(media, onImageClick, onFileClick) }
 
                 turn.error?.let {
                     Text(
@@ -171,7 +182,7 @@ private fun AssistantBubble(
 /** 원본 `MEDIA:` 텍스트 줄은 [ChatReducer]가 이미 떼어냈다(승인된 방향 — 경로 문자열은
  * 사용자에게 무의미하므로 안 보여준다) — 여기선 이 자리에 이미지/로딩/에러만 그린다. */
 @Composable
-private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
+private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit, onFileClick: (ChatMedia) -> Unit) {
     when (val status = media.status) {
         is MediaStatus.Loading ->
             CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -192,7 +203,7 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
                 // 이미 성공해서 바이트가 메모리에 있다(실측 확인, 2026-08-29: 예전엔 여기서
                 // "이미지를 표시할 수 없습니다"만 띄우고 바이트를 그냥 버렸다). 일반 파일
                 // 칩으로 대신 그려서 저장/공유는 계속 가능하게 한다.
-                FileChip(filename = media.filename, bytes = status.bytes)
+                FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
             }
         }
 
@@ -205,14 +216,16 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit) {
     }
 }
 
-/** 이미지로 디코드 안 되는 생성 파일(마크다운, PDF 등) — 전체화면 미리보기는 범위 밖
- * (YAGNI), 파일명 + 저장/공유 버튼만 준다. [bytes]는 이미 다운로드 완료된 상태라 버튼
- * 누르면 바로 저장/공유되고 재다운로드는 안 한다. */
+/** 이미지로 디코드 안 되는 생성 파일(마크다운, PDF 등) — 텍스트 계열([isPreviewableText])
+ * 이면 탭해서 원문 미리보기([onClick]), 저장/공유 버튼은 항상 있음. [bytes]는 이미
+ * 다운로드 완료된 상태라 버튼 누르면 바로 저장/공유되고 재다운로드는 안 한다. */
 @Composable
-private fun FileChip(filename: String, bytes: ByteArray) {
+private fun FileChip(media: ChatMedia, bytes: ByteArray, onClick: (ChatMedia) -> Unit) {
+    val filename = media.filename
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val mimeType = remember(filename) { guessMimeType(filename) }
+    val previewable = remember(mimeType) { isPreviewableText(mimeType) }
 
     Row(
         modifier = Modifier
@@ -220,6 +233,7 @@ private fun FileChip(filename: String, bytes: ByteArray) {
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium,
             )
+            .let { if (previewable) it.clickable { onClick(media) } else it }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -327,6 +341,66 @@ private fun FullscreenImageViewer(media: ChatMedia, onDismiss: () -> Unit) {
                     Text("📤", color = androidx.compose.ui.graphics.Color.White)
                 }
             }
+        }
+    }
+}
+
+/**
+ * `FileChip` 탭 시 뜨는 텍스트 원문 미리보기 — 마크다운 서식 렌더링은 범위 밖(YAGNI),
+ * UTF-8로 디코드한 원문 그대로 스크롤 가능하게 보여준다. [media.status]는 호출부
+ * ([ChatMessageList])가 Loaded일 때만 이 컴포저블을 띄우므로 항상 [MediaStatus.Loaded]다.
+ */
+@Composable
+private fun TextPreviewDialog(media: ChatMedia, onDismiss: () -> Unit) {
+    val loaded = media.status as? MediaStatus.Loaded ?: return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val mimeType = remember(media.filename) { guessMimeType(media.filename) }
+    val text = remember(media.id) {
+        runCatching { loaded.bytes.toString(Charsets.UTF_8) }.getOrDefault("(디코드 실패)")
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(onClick = onDismiss) { Text("✕") }
+                Text(
+                    text = media.filename,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f).padding(top = 12.dp),
+                )
+                IconButton(onClick = {
+                    scope.launch {
+                        val saved = withContext(Dispatchers.IO) {
+                            saveFileToDownloads(context, media.filename, loaded.bytes, mimeType)
+                        }
+                        val message = if (saved) "다운로드 폴더에 저장됨" else "저장 실패"
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("⬇") }
+                IconButton(onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { shareFile(context, media.filename, loaded.bytes, mimeType) }
+                    }
+                }) { Text("📤") }
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(12.dp),
+            )
         }
     }
 }

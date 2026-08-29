@@ -1,0 +1,24 @@
+[project]
+name = "file-export"
+version = "0.1.0"
+description = "폰(api_server)에 보여줄 문서(리포트/정리/요약)를 만드는 좁은 MCP 서버 — write_file 대신 이걸 써야 upload-server가 폰에 서빙할 수 있는 위치에 저장된다"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+file-export = "file_export.server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/file_export"]
