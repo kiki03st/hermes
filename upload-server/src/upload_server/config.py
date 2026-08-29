@@ -11,6 +11,7 @@ DEFAULT_PORT = 8643
 DEFAULT_RETENTION_DAYS = 14
 DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 DEFAULT_SWEEP_INTERVAL_SECONDS = 3600
+DEFAULT_GENERATED_DIR = "./generated"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class Config:
     retention_days: int
     max_upload_bytes: int
     sweep_interval_seconds: int
+    generated_dir: str = DEFAULT_GENERATED_DIR
 
     @staticmethod
     def from_env() -> "Config":
@@ -41,4 +43,5 @@ class Config:
                     "UPLOAD_SERVER_SWEEP_INTERVAL_SECONDS", str(DEFAULT_SWEEP_INTERVAL_SECONDS),
                 ),
             ),
+            generated_dir=os.environ.get("UPLOAD_SERVER_GENERATED_DIR", DEFAULT_GENERATED_DIR),
         )

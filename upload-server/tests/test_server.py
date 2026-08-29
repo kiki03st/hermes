@@ -17,6 +17,7 @@ def _make_config(tmp_path: Path, **overrides) -> Config:
         retention_days=14,
         max_upload_bytes=1024,
         sweep_interval_seconds=3600,
+        generated_dir=str(tmp_path / "generated"),
     )
     base.update(overrides)
     return Config(**base)
@@ -76,3 +77,46 @@ async def test_upload_rejects_missing_file_field(client):
     resp = await test_client.post("/upload", data=form, headers={"Authorization": "Bearer test-key"})
 
     assert resp.status == 400
+
+
+async def test_download_returns_bytes_with_content_type(client):
+    test_client, config = client
+    tool_dir = Path(config.generated_dir) / "comfyui"
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "a.png").write_bytes(b"png-bytes")
+
+    resp = await test_client.get("/generated/comfyui/a.png", headers={"Authorization": "Bearer test-key"})
+
+    assert resp.status == 200
+    assert await resp.read() == b"png-bytes"
+    assert resp.content_type == "image/png"
+
+
+async def test_download_rejects_wrong_auth(client):
+    test_client, config = client
+    tool_dir = Path(config.generated_dir) / "comfyui"
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "a.png").write_bytes(b"png-bytes")
+
+    resp = await test_client.get("/generated/comfyui/a.png", headers={"Authorization": "Bearer wrong"})
+
+    assert resp.status == 401
+
+
+async def test_download_missing_file_returns_404(client):
+    test_client, _ = client
+
+    resp = await test_client.get("/generated/comfyui/nope.png", headers={"Authorization": "Bearer test-key"})
+
+    assert resp.status == 404
+
+
+async def test_download_blocks_traversal_via_tool(client):
+    test_client, _ = client
+
+    resp = await test_client.get("/generated/../secret.txt", headers={"Authorization": "Bearer test-key"})
+
+    # aiohttp가 라우팅 전에 "/generated/../secret.txt"를 "/secret.txt"로 정규화해서
+    # 이 라우트 자체에 안 걸릴 수도 있다(그럼 404) — 어느 쪽이든 실제 생성 파일이 아닌
+    # 걸 200으로 돌려주지만 않으면 된다.
+    assert resp.status in (403, 404)

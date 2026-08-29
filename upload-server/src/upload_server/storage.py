@@ -34,3 +34,19 @@ def save_upload(inbox_dir: Path, original_name: str, data: bytes) -> Path:
     target = inbox_dir / stored_name
     target.write_bytes(data)
     return target.resolve()
+
+
+def resolve_generated_path(generated_dir: Path, tool: str, filename: str) -> Path | None:
+    """`[generated_dir]/[tool]/[filename]`을 안전하게 조립한다 — 다운로드 엔드포인트
+    전용(업로드와 반대 방향: 서버가 만든 파일을 폰에 서빙). `tool`/`filename`은 각각
+    `sanitize_filename`으로 먼저 정리하지만, 슬래시 없이 단독으로 오는 `".."`은
+    `sanitize_filename`을 그대로 통과한다(실측: `Path("..").name == ".."`라서 빈
+    이름 대체 규칙이 안 걸림 — `test_storage.py`의
+    `test_resolve_generated_path_blocks_traversal_via_tool` 참고). 그래서 조립한
+    경로를 `.resolve()`한 뒤 `[generated_dir]` 하위인지 `is_relative_to()`로 반드시
+    한 번 더 검증한다 — 이게 사실상 유일한 방어선이다(설계 문서 §다운로드 라우트)."""
+    root = generated_dir.resolve()
+    target = (generated_dir / sanitize_filename(tool) / sanitize_filename(filename)).resolve()
+    if not target.is_relative_to(root):
+        return None
+    return target

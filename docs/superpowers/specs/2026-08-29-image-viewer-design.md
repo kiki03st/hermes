@@ -74,13 +74,14 @@ Android 쪽은 `MEDIA:` 태그를 파싱해서 그 라우트로 바이트를 받
 - `GET /generated/{tool}/{filename}` 신규 (`server.py`의 `handle_download`).
 - 인증: 기존 `UPLOAD_SERVER_API_KEY` Bearer 토큰 재사용(별도 키 없음).
 - 경로 검증 (`storage.py`의 `resolve_generated_path`):
-  1. `tool`/`filename` 각각 기존 `sanitize_filename`으로 정리
-     (`..` 등 디렉터리 구성요소는 `Path(...).name`이 빈 문자열이 되어
-     이미 `"file"`로 치환됨 — 기존 로직 재사용).
+  1. `tool`/`filename` 각각 기존 `sanitize_filename`으로 정리(슬래시가 낀
+     경로는 마지막 구성요소만 남김). 단, 슬래시 없이 단독으로 오는 `".."`
+     자체는 `sanitize_filename`을 그대로 통과한다(실측: `Path("..").name`은
+     빈 문자열이 아니라 `".."` 그대로라서 빈 이름 대체 규칙이 안 걸림).
   2. `generated_dir / safe_tool / safe_name`을 `.resolve()`한 뒤
-     `generated_dir.resolve()` 하위인지 `is_relative_to()`로 재검증
-     (defense-in-depth — sanitize만으로 막히지 않는 경로가 나중에 생겨도
-     여기서 한 번 더 막는다).
+     `generated_dir.resolve()` 하위인지 `is_relative_to()`로 재검증 —
+     1번이 못 거른 단독 `".."` 케이스를 실제로 막는 건 이 2번이다
+     (defense-in-depth가 장식이 아니라 필수 방어선).
   3. 검증 실패 시 403, 파일 없으면 404.
 - `GENERATED_ROOT` = 새 env var `UPLOAD_SERVER_GENERATED_DIR` (기본 `./generated`).
 - `Content-Type`은 `mimetypes.guess_type(filename)` 기반 추정.

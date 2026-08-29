@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 from pathlib import Path
 
 from aiohttp import web
 
 from .config import Config
-from .storage import save_upload
+from .storage import resolve_generated_path, save_upload
 from .sweep import sweep_loop
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ def make_app(config: Config) -> web.Application:
     app = web.Application(client_max_size=config.max_upload_bytes + 1024 * 1024)
     app["config"] = config
     app.router.add_post("/upload", handle_upload)
+    app.router.add_get("/generated/{tool}/{filename}", handle_download)
     app.on_startup.append(_start_sweep)
     app.on_cleanup.append(_stop_sweep)
     return app
@@ -67,6 +69,27 @@ async def handle_upload(request: web.Request) -> web.Response:
     logger.info("upload: saved %s (%d bytes)", target, total)
 
     return web.json_response({"path": str(target), "note": _retention_note(config.retention_days)})
+
+
+async def handle_download(request: web.Request) -> web.Response:
+    """GET /generated/{tool}/{filename} — 생성기(comfyui-bridge 등)가 만든 파일을 폰
+    앱에 서빙한다. 인증은 업로드와 같은 Bearer 키(설계 문서 §다운로드 라우트 — 별도
+    키 발급 없음). 경로 검증은 전부 `resolve_generated_path`에 위임한다."""
+    config: Config = request.app["config"]
+
+    if request.headers.get("Authorization") != f"Bearer {config.api_key}":
+        return web.json_response({"error": "인증 실패"}, status=401)
+
+    tool = request.match_info["tool"]
+    filename = request.match_info["filename"]
+    target = resolve_generated_path(Path(config.generated_dir), tool, filename)
+    if target is None:
+        return web.json_response({"error": "잘못된 경로"}, status=403)
+    if not target.is_file():
+        return web.json_response({"error": "파일을 찾을 수 없음"}, status=404)
+
+    content_type, _ = mimetypes.guess_type(target.name)
+    return web.Response(body=target.read_bytes(), content_type=content_type or "application/octet-stream")
 
 
 async def _start_sweep(app: web.Application) -> None:
