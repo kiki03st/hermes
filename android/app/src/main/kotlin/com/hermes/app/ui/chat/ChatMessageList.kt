@@ -278,25 +278,25 @@ private fun FileChip(media: ChatMedia, bytes: ByteArray, onClick: (ChatMedia) ->
 }
 
 /** 버블 안에 바로 렌더링되는 작은 WebView — 이미지와 같은 자리, 탭하면 [onClick]으로
- * 전체화면을 연다(클로드 Artifacts와 같은 패턴 — 인라인은 정적 미리보기, 탭하면 다운로드/
- * 공유 버튼이 있는 전체화면). [html]은 [resolveWebViewHtml]이 만든, 그대로 로드하면 되는
- * 완성된 페이지다. 매 리컴포지션마다 새 WebView를 만들지 않도록 `factory`에서만 생성한다.
- *
- * 클릭은 WebView 위에 덮은 투명 `Box`가 가로챈다 — WebView에 직접 `Modifier.clickable`을
- * 붙이면 안 먹힌다(실측 버그, 2026-08-30: 예전엔 WebView에 `setOnTouchListener { _, _ ->
- * true }`로 터치를 다 삼켜서 리스트 스크롤과 안 부딪히게 했는데, 그게 바깥 clickable까지
- * 막아버려서 탭해도 전체화면이 안 열렸다 — WebView는 네이티브 View라 터치를 자기가 먼저
- * 받는다). 오버레이가 모든 터치를 먼저 받으니 WebView 자체 터치 핸들러는 필요 없다. */
+ * 전체화면을 연다. [html]은 [resolveWebViewHtml]이 만든, 그대로 로드하면 되는 완성된
+ * 페이지다. 매 리컴포지션마다 새 WebView를 만들지 않도록 `factory`에서만 생성한다. */
 @Composable
 private fun InlineWebView(html: String, contentDescription: String, onClick: () -> Unit) {
-    Box(modifier = Modifier.widthIn(max = 280.dp).height(220.dp)) {
-        androidx.compose.ui.viewinterop.AndroidView(
-            modifier = Modifier.matchParentSize(),
-            factory = { ctx -> android.webkit.WebView(ctx).apply { settings.javaScriptEnabled = true } },
-            update = { webView -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null) },
-        )
-        Box(modifier = Modifier.matchParentSize().clickable(onClick = onClick))
-    }
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            .height(220.dp)
+            .clickable(onClick = onClick),
+        factory = { ctx ->
+            android.webkit.WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                // 버블 안 미리보기는 스크롤/줌 조작 없이 그냥 보여주기만 하면 된다 —
+                // 리스트 스크롤과 웹뷰 내부 스크롤이 충돌하지 않게.
+                setOnTouchListener { _, _ -> true }
+            }
+        },
+        update = { webView -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null) },
+    )
 }
 
 /**
