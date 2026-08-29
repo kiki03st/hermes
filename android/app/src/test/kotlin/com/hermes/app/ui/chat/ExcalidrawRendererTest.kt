@@ -57,6 +57,20 @@ class ExcalidrawRendererTest {
     }
 
     @Test
+    fun `buildExcalidrawViewerHtml notifies the capture bridge on both success and error paths`() {
+        // DiagramThumbnail(오프스크린 캡처)이 "다 됐다"를 아는 유일한 방법 — onPageFinished는
+        // 문서 로드 시점일 뿐, exportToSvg는 그 뒤 비동기로 돈다. 성공/실패 둘 다 불러야
+        // 캡처가 영원히 안 끝난 것처럼 멈춰있지 않는다.
+        val html = buildExcalidrawViewerHtml("""{"elements": []}""")
+
+        assertTrue(html.contains("AndroidRenderBridge.onRenderComplete()"))
+        // 정의 1번 + 호출 2번(성공 경로, showError 안) — 최소 3번은 나와야 둘 다 부르는
+        // 것이 보장된다.
+        val occurrences = Regex("notifyRenderComplete\\(\\)").findAll(html).count()
+        assertTrue("notifyRenderComplete() should appear at least 3 times (def + 2 call sites), found $occurrences", occurrences >= 3)
+    }
+
+    @Test
     fun `resolveWebViewHtml wraps excalidraw scenes through the exportToSvg viewer`() {
         val scene = """{"elements": []}"""
 
@@ -78,5 +92,25 @@ class ExcalidrawRendererTest {
     fun `resolveWebViewHtml returns null for plain documents`() {
         assertEquals(null, resolveWebViewHtml("notes.md", "text/markdown", "# hi"))
         assertEquals(null, resolveWebViewHtml("data.json", "application/json", "{}"))
+    }
+
+    @Test
+    fun `stripViewportMetaForCapture removes the viewport meta tag regardless of attribute order`() {
+        // 실측 버그(2026-08-30): architecture-diagram 산출물이 데스크톱 폭 기준 절대좌표라,
+        // 이 태그가 남아있으면 useWideViewPort/loadWithOverviewMode가 안 먹혀서 캡처가
+        // 배경색만 찍었다("까만 빈 박스").
+        val html = """<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>x</title></head>"""
+
+        val stripped = stripViewportMetaForCapture(html)
+
+        assertFalse(stripped.contains("viewport"))
+        assertTrue(stripped.contains("<title>x</title>"))
+    }
+
+    @Test
+    fun `stripViewportMetaForCapture is a no-op when there is no viewport meta tag`() {
+        val html = "<head><title>x</title></head>"
+
+        assertEquals(html, stripViewportMetaForCapture(html))
     }
 }

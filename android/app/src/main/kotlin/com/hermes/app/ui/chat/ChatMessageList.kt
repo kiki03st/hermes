@@ -1,6 +1,8 @@
 package com.hermes.app.ui.chat
 
 import android.graphics.BitmapFactory
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,8 +15,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -36,16 +40,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -202,13 +210,23 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit, onFi
                 // 비트맵 디코드 실패 = 이미지가 아닌 파일(마크다운, HTML 다이어그램, excalidraw,
                 // PDF 등) — 다운로드 자체는 이미 성공해서 바이트가 메모리에 있다(실측 확인,
                 // 2026-08-29: 예전엔 여기서 "이미지를 표시할 수 없습니다"만 띄우고 바이트를
-                // 그냥 버렸다). 일반 파일 칩으로 대신 그려서 저장/공유는 계속 가능하게 한다.
+                // 그냥 버렸다).
                 //
-                // HTML/excalidraw를 버블에 바로 인라인 WebView로 렌더링해봤는데(2026-08-30)
-                // 콘솔 로그 접근이 없는 상태로 세 번 고쳐도 매번 다른 증상(흰 화면→까만
-                // 박스→흰 화면)으로 계속 깨져서 롤백했다 — 탭하면 여는 전체화면
-                // TextPreviewDialog(WebView)는 그대로 잘 동작하니 거기서만 렌더링한다.
-                FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
+                // HTML/excalidraw를 버블에 바로 라이브 인라인 WebView로 렌더링해봤는데
+                // (2026-08-30) 콘솔 로그 접근이 없는 상태로 세 번 고쳐도 매번 다른 증상
+                // (흰 화면→까만 박스→흰 화면)으로 계속 깨져서 롤백했다. 대신 렌더링
+                // 가능한 콘텐츠면 [DiagramThumbnail](오프스크린 캡처 → 정적 비트맵)로,
+                // 그 외 순수 문서는 [FileChip]으로 그린다.
+                val mimeType = remember(media.filename) { guessMimeType(media.filename) }
+                val webHtml = remember(media.id) {
+                    runCatching { status.bytes.toString(Charsets.UTF_8) }.getOrNull()
+                        ?.let { resolveWebViewHtml(media.filename, mimeType, it) }
+                }
+                if (webHtml != null) {
+                    DiagramThumbnail(media = media, html = webHtml, bytes = status.bytes, onClick = onFileClick)
+                } else {
+                    FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
+                }
             }
         }
 
@@ -218,6 +236,87 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit, onFi
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+    }
+}
+
+/**
+ * 채팅 버블 인라인 자리 — 라이브 WebView를 절대 안 띄운다(롤백 사유는 [resolveWebViewHtml]
+ * 문서 참고). 대신 화면 밖 투명 WebView에서 **한 번만** 렌더링한 뒤 [captureWebViewBitmap]로
+ * 정적 비트맵을 뜨고, 그 뒤부턴 실제 comfyui 이미지와 완전히 같은 `Image`/`.clickable`
+ * 경로로 보여준다 — 리스트가 스크롤되는 동안 스크립트가 살아있는 WebView가 하나도
+ * 없어서 예전 버그 클래스(흰 화면/까만 박스) 자체가 안 생긴다.
+ *
+ * 렌더링 완료 신호는 콘텐츠 종류마다 다르다:
+ * - architecture-diagram의 완성된 HTML(정적) → `WebViewClient.onPageFinished`로 충분.
+ *   데스크톱 폭 절대좌표 레이아웃이라 [stripViewportMetaForCapture] +
+ *   `useWideViewPort`/`loadWithOverviewMode`로 좁은 캡처 프레임에 맞춰 축소한다(실측
+ *   버그, 2026-08-30: 안 하면 배경색만 찍힘 — "까만 빈 박스").
+ * - excalidraw(비동기: CDN에서 `exportToSvg` 로드 후 그림) → 문서 로드 완료 시점엔 아직
+ *   빈 화면이라 [RenderCompleteBridge]를 붙인다(`buildExcalidrawViewerHtml`이 성공/실패
+ *   양쪽 다 `AndroidRenderBridge.onRenderComplete()`를 부르도록 되어있다).
+ *
+ * 캡처가 실패하거나 8초 안에 안 끝나면(타임아웃 — 두 신호 다 영원히 안 올 가능성에
+ * 대비) [FileChip]으로 떨어진다 — 최소한 다운로드/공유는 계속 할 수 있다.
+ */
+@Composable
+private fun DiagramThumbnail(media: ChatMedia, html: String, bytes: ByteArray, onClick: (ChatMedia) -> Unit) {
+    var captured by remember(media.id) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(media.id) { mutableStateOf(false) }
+    val isAsync = remember(media.filename) { isExcalidrawFile(media.filename) }
+
+    when {
+        captured != null -> Image(
+            bitmap = captured!!,
+            contentDescription = media.filename,
+            modifier = Modifier.widthIn(max = 280.dp).clickable { onClick(media) },
+        )
+
+        failed -> FileChip(media = media, bytes = bytes, onClick = onClick)
+
+        else -> {
+            Box(modifier = Modifier.width(280.dp).height(220.dp)) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), strokeWidth = 2.dp)
+                AndroidView(
+                    // alpha(0f) — 크기는 실제로 잡혀야 캡처가 되니(0크기 뷰는
+                    // captureWebViewBitmap이 바로 null 반환) 안 보이게만 한다(0 크기
+                    // 아님). matchParentSize()는 BoxScope 멤버라 여기(Box 바로 안)에서만
+                    // 암시적으로 풀린다 — 별도 import 넣으면 Unresolved reference(실측
+                    // 확인, 2026-08-30).
+                    modifier = Modifier.matchParentSize().alpha(0f),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            if (isAsync) {
+                                addJavascriptInterface(
+                                    RenderCompleteBridge {
+                                        val bmp = captureWebViewBitmap(this)
+                                        if (bmp != null) captured = bmp else failed = true
+                                    },
+                                    "AndroidRenderBridge",
+                                )
+                            } else {
+                                settings.useWideViewPort = true
+                                settings.loadWithOverviewMode = true
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        val bmp = view?.let { captureWebViewBitmap(it) }
+                                        if (bmp != null) captured = bmp else failed = true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    update = { webView ->
+                        val toLoad = if (isAsync) html else stripViewportMetaForCapture(html)
+                        webView.loadDataWithBaseURL(null, toLoad, "text/html", "utf-8", null)
+                    },
+                )
+            }
+            LaunchedEffect(media.id) {
+                delay(8000)
+                if (captured == null) failed = true
+            }
+        }
     }
 }
 

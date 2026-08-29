@@ -51,8 +51,16 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
         |<body>
         |<div id="root"><div id="error"></div></div>
         |<script type="module">
+        |  // 오프스크린 캡처(WebViewCapture.kt의 RenderCompleteBridge)가 붙어있으면 알려준다
+        |  // — 없으면(전체화면 뷰어처럼 그냥 보여주기만 할 때) 아무 일도 안 한다. 성공/실패
+        |  // 양쪽 다 부른다 — 캡처 쪽이 "다 됐다"만 알면 되고, 뭘 캡처하든(그림이든 에러
+        |  // 문구든) 그건 캡처 쪽 문제가 아니다.
+        |  function notifyRenderComplete() {
+        |    if (window.AndroidRenderBridge) window.AndroidRenderBridge.onRenderComplete();
+        |  }
         |  function showError(msg) {
         |    document.getElementById('error').textContent = 'Excalidraw 렌더링 실패: ' + msg;
+        |    notifyRenderComplete();
         |  }
         |  // 정적 import는 모듈 로드 실패(네트워크/CORS/버전 문제 등)가 try/catch 밖에서
         |  // 일어나 에러를 못 잡는다(실측: 하얀 화면만 뜨는 실패가 있었다, 2026-08-30) —
@@ -71,6 +79,7 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
         |      const root = document.getElementById('root');
         |      root.innerHTML = '';
         |      root.appendChild(svg);
+        |      notifyRenderComplete();
         |    } catch (e) {
         |      showError(e && e.message ? e.message : String(e));
         |    }
@@ -84,14 +93,30 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
 /** [filename]/[mimeType]가 WebView로 렌더링할 대상이면(실제로 그려지는 시각 콘텐츠 —
  * architecture-diagram의 완성된 HTML, excalidraw의 scene JSON) 로드할 HTML을 만들어
  * 돌려준다. 그 외(md/txt/csv/pdf 등 순수 문서)는 null — 호출부가 `FileChip`으로 떨어뜨린다.
- * `TextPreviewDialog`(전체화면 탭 미리보기)가 쓴다.
+ * `TextPreviewDialog`(전체화면 탭 미리보기)와 `DiagramThumbnail`(버블 인라인 캡처용
+ * 오프스크린 WebView) 둘 다 쓴다.
  *
- * 원래는 채팅 버블에 바로 인라인 렌더링하는 것도 시도했다(2026-08-30, 클로드 Artifacts처럼
- * 탭 없이 바로 보이길 원해서) — 근데 콘솔 로그 접근 없이 세 번 고쳐도 매번 다른 증상
- * (흰 화면 → 까만 박스 → 흰 화면)으로 계속 깨져서 롤백했다. 전체화면 탭 미리보기는
- * 안정적으로 작동해서 그대로 둔다. */
+ * 채팅 버블에 라이브 WebView를 바로 인라인으로 띄우는 것도 시도했다(2026-08-30, 클로드
+ * Artifacts처럼 탭 없이 바로 보이길 원해서) — 콘솔 로그 접근 없이 세 번 고쳐도 매번
+ * 다른 증상(흰 화면 → 까만 박스 → 흰 화면)으로 계속 깨져서 롤백했다. 대신 인라인
+ * 자리엔 **한 번 캡처한 정적 비트맵**만 놓는다(`DiagramThumbnail`) — 리스트 스크롤
+ * 중에 살아있는 WebView가 하나도 없어서 그 버그 클래스 자체가 안 생긴다. 라이브
+ * WebView는 전체화면 탭 미리보기(이미 안정적으로 작동)에만 남긴다. */
 fun resolveWebViewHtml(filename: String, mimeType: String, rawText: String): String? = when {
     isExcalidrawFile(filename) -> buildExcalidrawViewerHtml(rawText)
     isRenderableHtml(mimeType) -> rawText
     else -> null
 }
+
+// architecture-diagram 등의 템플릿이 넣는 <meta name="viewport" ...> 태그 — 데스크톱
+// 브라우저 폭 기준 절대좌표 레이아웃인데 이 태그가 있으면 WebView의
+// useWideViewPort/loadWithOverviewMode(좁은 뷰에 맞춰 축소해서 보여주는 설정)가 안
+// 먹힌다(페이지 자신의 viewport 선언이 우선시됨). 캡처용 오프스크린 WebView에서만 이
+// 태그를 지운다 — 전체화면은 공간이 넉넉해서 안 건드린다.
+private val _VIEWPORT_META_TAG = Regex("""<meta[^>]*name=["']viewport["'][^>]*>""", RegexOption.IGNORE_CASE)
+
+/** [DiagramThumbnail]의 오프스크린 캡처 WebView에서만 쓴다 — [html]에서 viewport 메타
+ * 태그를 지운다. 실측 버그(2026-08-30, 라이브 인라인 WebView 시절): architecture-diagram
+ * 산출물이 데스크톱 폭 기준 절대좌표라, 축소 없이 그대로 캡처하면 실제 다이어그램
+ * 내용은 화면 밖으로 벗어나고 배경색만 찍혔다. */
+fun stripViewportMetaForCapture(html: String): String = _VIEWPORT_META_TAG.replace(html, "")
