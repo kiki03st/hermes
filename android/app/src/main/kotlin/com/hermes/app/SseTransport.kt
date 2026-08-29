@@ -32,6 +32,13 @@ interface SseTransport {
 
 class UrlConnectionSseTransport(
     private val connectTimeoutMillis: Int = 10_000,
+    // 게이트웨이가 30초마다 ": keepalive" 주석을 보낸다(실측) — 그보다 넉넉히 크게 잡아야
+    // 살아있는 연결의 정상적인 idle 구간(다음 keepalive를 기다리는 사이)에 오작동으로
+    // 안 끊는다. 예전엔 이걸 0(무제한)으로 뒀는데, 그러면 연결이 TCP RST 없이 조용히
+    // 죽었을 때(와이파이 범위 이탈 등, 흔한 모바일 시나리오) `readLine()`이 예외 없이
+    // 영원히 블로킹해서 [ChatConversationState]의 isRunning이 영구 박제되는 버그가
+    // 있었다 — 유한한 타임아웃이 있어야 결국 SocketTimeoutException으로 빠져나온다.
+    private val readTimeoutMillis: Int = 90_000,
 ) : SseTransport {
     override fun open(
         url: String,
@@ -45,11 +52,7 @@ class UrlConnectionSseTransport(
             connection = URL(url).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = connectTimeoutMillis
-            // 게이트웨이가 30초마다 ": keepalive" 주석을 보내지만(실측), 그 사이에도
-            // read 자체는 블로킹 상태이니 read timeout 을 짧게 잡으면 정상 연결도
-            // 끊는다 — 0(무제한)으로 두고, 연결을 닫는 책임은 onConnected 의 cancel
-            // 콜백으로 호출자에게 넘긴다.
-            connection.readTimeout = 0
+            connection.readTimeout = readTimeoutMillis
             headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
             connection.setRequestProperty("Accept", "text/event-stream")
 
