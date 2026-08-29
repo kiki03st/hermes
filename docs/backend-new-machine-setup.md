@@ -61,12 +61,21 @@ cd C:\hermes
 
 ### 1.1 설치
 
+이 리포를 클론한 사람이 아니라 **AI 에이전트가 이 문서를 보고 직접 실행하는 경우** —
+`-SkipSetup` 없이 돌리면 설치 직후 대화형 설정 마법사가 자동 실행돼서 TTY 입력을
+기다리며 멈춘다(에이전트는 응답 못 함, 실측 확인). 반드시 이렇게:
+
 ```powershell
-iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+iex "& { $(irm https://hermes-agent.nousresearch.com/install.ps1) } -SkipSetup"
 ```
 
-새 PowerShell 창을 열어 `hermes --version` 확인(설치 전에 열려있던 창은 PATH 미반영).
-자세한 설치 스크립트 동작·정정 사항: [`setup-windows.md` §1](./setup-windows.md#1-hermes-설치).
+사람이 직접 터미널에서 대화형으로 설치하는 거면 `-SkipSetup` 없이 돌려서 마법사를
+따라가도 된다 — 그 경우 아래 §1.2~1.6이 마법사 질문과 대응된다.
+
+새 PowerShell 창을 열어 `hermes --version` 확인(설치 전에 열려있던 창은 PATH 미반영) —
+**이 새 창은 cwd가 리포 루트가 아니다**, 아래 단계들이 상대경로를 쓰므로
+`cd C:\hermes`로 되돌아갈 것. 자세한 설치 스크립트 동작·정정 사항:
+[`setup-windows.md` §1](./setup-windows.md#1-hermes-설치).
 
 ### 1.2 LLM 프로바이더
 
