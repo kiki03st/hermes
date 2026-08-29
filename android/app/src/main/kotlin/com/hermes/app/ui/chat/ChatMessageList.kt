@@ -394,18 +394,26 @@ private fun TextPreviewDialog(media: ChatMedia, onDismiss: () -> Unit) {
                     }
                 }) { Text("📤") }
             }
-            if (isRenderableHtml(mimeType)) {
+            val isExcalidraw = remember(media.filename) { isExcalidrawFile(media.filename) }
+            if (isRenderableHtml(mimeType) || isExcalidraw) {
+                // excalidraw는 원문이 렌더링 가능한 HTML이 아니라 scene JSON이라(같은
+                // .excalidraw 파일이 architecture-diagram의 완성된 HTML과 다름), WebView에
+                // 넘기기 전에 exportToSvg를 호출하는 뷰어 페이지로 감싼다
+                // (ExcalidrawRenderer.kt — CDN에서 @excalidraw/utils를 ES 모듈로 불러온다,
+                // 실기기 미검증 리스크 있음, 설계 문서: 2026-08-30).
+                val htmlToLoad = remember(media.id) { if (isExcalidraw) buildExcalidrawViewerHtml(text) else text }
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         android.webkit.WebView(ctx).apply {
                             // 다이어그램 산출물은 인라인 CSS/JS로 자체완결형이라 스크립트가
-                            // 필요할 수 있다(호버 효과 등) — 로컬에서 만든 신뢰 콘텐츠라
-                            // XSS 우려 없음(우리 자신의 생성 파이프라인 산출물).
+                            // 필요할 수 있다(호버 효과, excalidraw의 exportToSvg 호출 등) —
+                            // 로컬에서 만든 신뢰 콘텐츠라 XSS 우려 없음(우리 자신의 생성
+                            // 파이프라인 산출물).
                             settings.javaScriptEnabled = true
                         }
                     },
-                    update = { webView -> webView.loadDataWithBaseURL(null, text, "text/html", "utf-8", null) },
+                    update = { webView -> webView.loadDataWithBaseURL(null, htmlToLoad, "text/html", "utf-8", null) },
                 )
             } else {
                 Text(

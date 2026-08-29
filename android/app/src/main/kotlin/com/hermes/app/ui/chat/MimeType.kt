@@ -30,9 +30,8 @@ private val _MIME_BY_EXTENSION = mapOf(
     // architecture-diagram 등 다이어그램 스킬이 SVG를 HTML로 감싸서 내보낸다
     // (file-redirect 플러그인이 이 확장자를 리다이렉트 대상에 추가한 것과 짝).
     "html" to "text/html",
-    // excalidraw 스킬 산출물 — 내용 자체는 표준 JSON이라 원문 미리보기는 가능하다
-    // (excalidraw.com 캔버스 렌더링은 범위 밖, YAGNI — HTML처럼 WebView로 그리려면
-    // excalidraw 자체 JS 라이브러리가 필요하다).
+    // excalidraw 스킬 산출물 — 표준 Excalidraw scene JSON. WebView에서 실제로
+    // 렌더링한다(ExcalidrawRenderer.kt의 buildExcalidrawViewerHtml 참고).
     "excalidraw" to "application/json",
     "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
