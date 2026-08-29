@@ -19,6 +19,20 @@ cwd는 pre_tool_call 파이썬 플러그인 콜백 페이로드에 없다(셸 �
 아니라(`.hermes/plans`) 리다이렉트가 아예 안 걸렸다. `.hermes/` 하위 전체를
 추가로 잡도록 넓혔다.
 
+그다음 excalidraw가 `C:/Users/ksy/diagrams/sample-flowchart.excalidraw`처럼
+홈 밑에 자기가 서브폴더(`diagrams/`)까지 만들어서 쓴 케이스도 놓쳤다(2026-08-30,
+"홈 바로 밑" 또는 ".hermes/ 하위" 둘 다 아님). 같은 패턴이 반복되길래 아예
+"홈 디렉터리 트리 밑 어디든" 통째로 잡도록 다시 넓혔다 — 어차피 실제 코딩
+작업(`C:/hermes/...`)은 홈 디렉터리 밑에 안 산다(이 프로젝트 자체가 예전에 경로
+문제로 `C:/Users/ksy/...`에서 `C:/hermes`로 옮긴 이력이 있다, `_MOVED_TO_C_HERMES.txt`
+참고) — 그래서 이 정도로 넓혀도 오탐 위험이 낮다.
+
+주의: 이 파일의 문서 주석에 Windows 경로를 적을 땐 역슬래시 대신 슬래시(/)를
+써야 한다 — 역슬래시 뒤에 대문자 U가 바로 오면 파이썬이 8자리 유니코드
+이스케이프로 해석해서 SyntaxError를 낸다(실측, 2026-08-30 — 배포 직전 문법
+검사에서 잡힘, "Users"라는 단어 앞의 그 조합이 원인이었다). raw string이 아닌
+일반 문자열/문서주석 전부 해당.
+
 **확장자 화이트리스트는 완전히 버렸다**(2026-08-30, 3번째 실측 실패 후): 처음엔
 .md/.txt/.csv/.json만 잡았다가 architecture-diagram이 .html을 써서 놓쳤고(추가),
 그다음 excalidraw가 .excalidraw를 써서 또 놓쳤다 — 새 스킬이 등장할 때마다
@@ -68,8 +82,8 @@ def _sanitize_filename(name: str) -> str:
 
 
 def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, session_id: str = "", **kwargs):
-    """pre_tool_call — write_file이 홈 디렉터리 바로 밑 또는 홈 디렉터리의
-    .hermes/ 하위(상대경로 포함)에 문서를 쓰려 하면 경로를
+    """pre_tool_call — write_file이 홈 디렉터리 트리 밑 어디든(바로 밑이든,
+    .hermes/든, 스킬이 만든 서브폴더든) 문서를 쓰려 하면 경로를
     upload-server/generated/files/로 바꿔치기한다(modify 지시). 그 외엔 손 안 댐."""
     if tool_name != "write_file" or not args:
         return None
@@ -88,9 +102,7 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
     # ".hermes/plans/..." 같은 스킬 산출물도 잡을 수 있다.
     abs_target = (target if target.is_absolute() else home / target).resolve()
 
-    in_home_root = abs_target.parent == home
-    in_hermes_dir = (home / ".hermes") in abs_target.parents
-    if not (in_home_root or in_hermes_dir):
+    if home not in abs_target.parents:
         return None
     # 확장자는 안 본다 — 위 docstring 참고(두더지잡기였다).
 
