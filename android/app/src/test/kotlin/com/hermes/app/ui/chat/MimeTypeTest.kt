@@ -15,6 +15,7 @@ class MimeTypeTest {
         assertEquals("text/csv", guessMimeType("data.csv"))
         assertEquals("application/json", guessMimeType("out.json"))
         assertEquals("application/zip", guessMimeType("archive.zip"))
+        assertEquals("text/html", guessMimeType("diagram.html"))
         assertEquals(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             guessMimeType("report.docx"),

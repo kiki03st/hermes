@@ -21,6 +21,9 @@ private val _MIME_BY_EXTENSION = mapOf(
     "csv" to "text/csv",
     "json" to "application/json",
     "zip" to "application/zip",
+    // architecture-diagram 등 다이어그램 스킬이 SVG를 HTML로 감싸서 내보낸다
+    // (file-redirect 플러그인이 이 확장자를 리다이렉트 대상에 추가한 것과 짝).
+    "html" to "text/html",
     "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pptx" to "application/vnd.openxmlformats-officedocument.presentationml.presentation",

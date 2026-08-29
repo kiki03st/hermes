@@ -26,7 +26,12 @@ import os
 import re
 from pathlib import Path
 
-_DOC_EXTENSIONS = {".md", ".txt", ".csv", ".json"}
+# 실측(2026-08-30): "다이어그램 그려줘" 요청은 comfyui가 아니라 architecture-diagram/
+# excalidraw 같은 별도 스킬로 감(모델이 diffusion 모델로는 글자 있는 도형을 못 그린다는
+# 걸 정확히 판단함) — 근데 architecture-diagram은 .html로 저장해서(SVG를 HTML에
+# 감싸는 형식) 이 목록에 없어 리다이렉트가 안 걸렸다. 홈 디렉터리에 그대로 남는
+# 원래 버그가 재현됨. .html 추가.
+_DOC_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".html"}
 # upload-server가 폰에 서빙하는 위치 — 리포마다/기기마다 클론 경로가 다를 수 있어
 # env var로 오버라이드 가능하게 한다(comfyui_bridge/config.py, file_export/config.py와
 # 같은 패턴). 기본값은 이 리포의 표준 설치 경로(C:\hermes).
