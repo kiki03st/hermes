@@ -6,12 +6,17 @@ import re
 import uuid
 from pathlib import Path
 
-_UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+# Windows 파일명에서 실제로 금지된 문자만 걸러낸다 — 예전엔 [^A-Za-z0-9._-] 밖은
+# 전부 "_"로 바꿔서 한글 등 비ASCII 파일명이 "________.md"처럼 통째로 깨졌다
+# (실측 버그, 2026-08-29, test_sanitize_filename_preserves_non_ascii_letters).
+# 한글/유니코드 문자는 유효한 Windows 파일명이라 보존해야 한다.
+_UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def sanitize_filename(name: str) -> str:
-    """디렉터리 구성요소를 전부 떼어내고(경로 traversal 방지), 영숫자/`.`/`_`/`-`
-    외 문자는 `_`로 바꾼다. 빈 이름은 `file`로 대체한다."""
+    """디렉터리 구성요소를 전부 떼어내고(경로 traversal 방지), Windows에서 실제
+    금지된 문자(`<>:"/\\|?*`, 제어문자)만 `_`로 바꾼다. 한글 등 비ASCII 문자는
+    그대로 둔다. 빈 이름은 `file`로 대체한다."""
     base = Path(name).name.strip()
     if not base:
         return "file"

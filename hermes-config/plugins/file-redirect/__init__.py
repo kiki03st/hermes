@@ -27,7 +27,10 @@ _DOC_EXTENSIONS = {".md", ".txt", ".csv", ".json"}
 _GENERATED_FILES_DIR = Path(
     os.environ.get("FILE_REDIRECT_GENERATED_DIR", r"C:\hermes\upload-server\generated\files"),
 )
-_UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+# Windows에서 실제 금지된 문자만 걸러낸다(upload-server/storage.py의 sanitize_filename과
+# 같은 수정 — 예전 [^A-Za-z0-9._-] 방식은 한글 파일명을 "________.md"처럼 통째로
+# 깨뜨렸다, 실측 버그 2026-08-29).
+_UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 # pre_tool_call과 transform_llm_output 사이에 리다이렉트 사실을 넘겨주는 세션별
 # 상태 — 모델의 응답 텍스트를 못 믿는다(실측 확인, 2026-08-29: 리다이렉트가 실제로

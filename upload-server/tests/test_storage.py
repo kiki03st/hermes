@@ -9,7 +9,16 @@ def test_sanitize_filename_strips_directory_components():
 
 
 def test_sanitize_filename_replaces_unsafe_characters():
-    assert sanitize_filename('weird name?*.png') == "weird_name__.png"
+    # Windows에서 실제로 금지된 문자만 바꾼다 — 공백은 정상 문자라 안 건드림.
+    assert sanitize_filename('weird name?*.png') == "weird name__.png"
+
+
+def test_sanitize_filename_preserves_non_ascii_letters():
+    # 실측 버그(2026-08-29): 예전 정규식이 영숫자/./_/- 밖은 전부 "_"로 바꿔서
+    # 한글 파일명이 "________.md"처럼 통째로 깨졌다. 한글/유니코드 문자는 Windows
+    # 파일명으로 유효하니 그대로 보존해야 한다.
+    assert sanitize_filename("좋은_프롬프트_작성법.md") == "좋은_프롬프트_작성법.md"
+    assert sanitize_filename("여우 그림.png") == "여우 그림.png"
 
 
 def test_sanitize_filename_falls_back_when_empty():
