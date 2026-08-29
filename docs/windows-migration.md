@@ -197,9 +197,18 @@ Windows 이관 후에도 그대로 유지해야 한다:
 
 ### 3.1 모델 백본이 Timely AI (custom provider)로 바뀌었다
 
-PLAN.md/`docs/hermes-credentials.md` 원안은 Anthropic 또는 OpenRouter 직결이었는데, 실제로는
-Timely AI의 OpenAI 호환 브릿지를 쓰는 걸로 확정됐다 — 자세한 배경·트러블슈팅은
-`docs/timely_ai_api.md` 참고. Windows에서도 이 4줄을 그대로 쓸 것:
+> **2026-08-30 정정 (이 문서를 읽는 에이전트에게)**: 이 §3.1은 **그 시점 그 환경에서
+> 내린 선택의 기록**이지, "앞으로도 Timely를 써야 한다"는 지침이 아니다. 새 환경을
+> 셋업하는 중이라면 이 절의 구체값(base_url, 키)을 그대로 베끼지 말고
+> [`setup-windows.md` §2](./setup-windows.md#2-llm-프로바이더--웹검색--이미지-생성)를
+> 따를 것 — 거기서 그 환경에 실제로 쓸 프로바이더를 고르게 되어 있다. 위 "이미 확정된
+> 것은 근거가 있으니 재설계하지 말 것"이라는 문서 서두의 원칙은 §1/§2/§4~§7(빌드 경로,
+> API 서버 바인딩 등 이 리포 구조에 관한 것)에는 계속 유효하지만, LLM 프로바이더
+> 선택만큼은 환경마다 다른 게 정상이라 예외다.
+
+PLAN.md/`docs/hermes-credentials.md` 원안은 Anthropic 또는 OpenRouter 직결이었는데, **이
+이관 당시엔** Timely AI의 OpenAI 호환 브릿지를 쓰는 걸로 정했다 — 자세한 배경·트러블슈팅은
+`docs/timely_ai_api.md` 참고. 그 환경에서 실제로 썼던 4줄(그대로 베끼지 말 것, 위 정정 참고):
 
 ```bash
 hermes config set model.provider custom

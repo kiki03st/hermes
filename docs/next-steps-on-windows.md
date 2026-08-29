@@ -16,7 +16,7 @@ Ubuntu(`kiki-server`)에서 먼저 다 해봤고, **이 Windows PC에서도 처�
 |---|---|
 | Hermes 네이티브 설치 | v0.20.6 (`install.ps1`, `-SkipSetup`으로 비대화형 설치) |
 | `HERMES_HOME` | `C:\Users\ksy\AppData\Local\hermes` (**`~/.hermes` 아님** — §Windows 실측 참고) |
-| Timely 백본 | `model.provider=custom` + `model.api_key`, `agent.max_turns=20` |
+| Timely 백본 | `model.provider=custom` + `model.api_key`, `agent.max_turns=20` (당시 이 환경에서 고른 프로바이더 — 다른 환경엔 강제 아님, `setup-windows.md` §2) |
 | 모델 왕복 | `/v1/chat/completions` 200, 산술 정답, 23초 |
 | 툴 호출 | 파일 읽기 도구로 `PLAN.md` 첫 줄 정확히 반환, 8초 |
 | `api_server` 툴셋 | `web, file, skills, todo, memory` 만 (browser도 추가로 끔) |
