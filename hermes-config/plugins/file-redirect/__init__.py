@@ -8,10 +8,16 @@ save_document_for_user_to_view_on_phone를 쓰게 docstring/함수명/메모리�
 바꾼다 — write_file이 호출된 위치와 무관하게, "홈 디렉터리에 바로 저장된 문서
 확장자 파일"이라는 패턴만 보고 강제로 옮긴다.
 
-cwd는 pre_tool_call 파이썬 플러그인 콜백 페이로드에 없다(셸 훅 전용 필드) —
-그래서 "경로의 부모 디렉터리가 정확히 홈 디렉터리"만으로 판단한다. 실제 코딩
-작업은 프로젝트 하위 디렉터리에 쓰지 홈 루트에 바로 안 쓰므로 이 휴리스틱으로
-충분히 구분된다(오탐 시 그냥 파일 위치만 바뀔 뿐, 파괴적이지 않음).
+cwd는 pre_tool_call 파이썬 플러그인 콜백 페이로드에 없다(셸 훅 전용 필드) — 그래서
+"홈 디렉터리 바로 밑" 또는 "홈 디렉터리의 .hermes/ 하위(스킬이 상대경로로 쓰는
+스크래치 위치, 예: plan 스킬의 .hermes/plans/)"만으로 판단한다. 실제 코딩 작업은
+프로젝트 하위 디렉터리에 쓰지 이 두 위치엔 안 쓰므로 이 휴리스틱으로 충분히
+구분된다(오탐 시 그냥 파일 위치만 바뀔 뿐, 파괴적이지 않음).
+
+실측(2026-08-30): "홈 디렉터리 바로 밑"만 잡던 첫 버전은 plan 스킬이 상대경로
+`.hermes/plans/<날짜>-....md`로 쓴 케이스를 놓쳤다 — parent가 정확히 home이
+아니라(`.hermes/plans`) 리다이렉트가 아예 안 걸렸다. `.hermes/` 하위 전체를
+추가로 잡도록 넓혔다.
 """
 
 from __future__ import annotations
@@ -48,7 +54,8 @@ def _sanitize_filename(name: str) -> str:
 
 
 def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, session_id: str = "", **kwargs):
-    """pre_tool_call — write_file이 홈 디렉터리에 바로 문서를 쓰려 하면 경로를
+    """pre_tool_call — write_file이 홈 디렉터리 바로 밑 또는 홈 디렉터리의
+    .hermes/ 하위(상대경로 포함)에 문서를 쓰려 하면 경로를
     upload-server/generated/files/로 바꿔치기한다(modify 지시). 그 외엔 손 안 댐."""
     if tool_name != "write_file" or not args:
         return None
@@ -57,19 +64,25 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
     if not raw_path:
         return None
 
-    target = Path(raw_path)
     try:
-        home = Path.home()
+        home = Path.home().resolve()
     except Exception:
         return None
 
-    if target.parent != home:
+    target = Path(raw_path)
+    # 상대경로는 api_server 세션의 cwd(=홈 디렉터리, 실측 확인)를 기준으로 풀어야
+    # ".hermes/plans/..." 같은 스킬 산출물도 잡을 수 있다.
+    abs_target = (target if target.is_absolute() else home / target).resolve()
+
+    in_home_root = abs_target.parent == home
+    in_hermes_dir = (home / ".hermes") in abs_target.parents
+    if not (in_home_root or in_hermes_dir):
         return None
-    if target.suffix.lower() not in _DOC_EXTENSIONS:
+    if abs_target.suffix.lower() not in _DOC_EXTENSIONS:
         return None
 
     _GENERATED_FILES_DIR.mkdir(parents=True, exist_ok=True)
-    new_path = _GENERATED_FILES_DIR / _sanitize_filename(target.name)
+    new_path = _GENERATED_FILES_DIR / _sanitize_filename(abs_target.name)
     if session_id:
         _last_redirect_by_session[session_id] = str(new_path)
     return {"action": "modify", "args": {"path": str(new_path)}}
