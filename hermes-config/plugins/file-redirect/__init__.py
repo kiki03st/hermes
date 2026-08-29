@@ -43,10 +43,15 @@ _UNSAFE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 # 성공했는데도 모델이 자기가 원래 요청한 옛 경로를 그대로 사용자에게 말했다 — tool
 # 결과의 resolved_path를 안 챙겨 봄). 그래서 정규식으로 텍스트에서 경로를 찾는 대신,
 # "이 세션에서 방금 리다이렉트가 실제로 일어났는가"를 직접 기억해뒀다가 쓴다.
-# 값은 (옛 경로 후보들, 새 경로) — 옛 경로가 응답 텍스트에 남아있으면 새 경로로
-# 바꿔치기한다(실측: 사용자가 채팅에서 옛 경로를 그대로 보고 "경로가 다르다"고
-# 헷갈렸다, 2026-08-30).
-_last_redirect_by_session: dict[str, tuple[list[str], str]] = {}
+#
+# 세션당 **리스트**다(딕셔너리 하나가 아니다) — 실측 버그(2026-08-30): "파일 3개
+# 만들어줘"처럼 한 턴에 write_file이 여러 번 불리면, 예전엔 세션 하나당 항목 하나만
+# 저장해서 매번 덮어써지고 마지막 파일만 남았다 — 사용자가 3개 요청했는데 1개만
+# 전송됐다. 이제 턴 안의 리다이렉트를 전부 리스트로 쌓아서 하나도 안 빠뜨린다.
+# 값은 (옛 경로 후보들, 새 경로) 튜플의 리스트 — 옛 경로가 응답 텍스트에 남아있으면
+# 새 경로로 바꿔치기한다(실측: 사용자가 채팅에서 옛 경로를 그대로 보고 "경로가
+# 다르다"고 헷갈렸다, 2026-08-30).
+_last_redirect_by_session: dict[str, list[tuple[list[str], str]]] = {}
 
 
 def _sanitize_filename(name: str) -> str:
@@ -91,27 +96,30 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
         # 풀어낸 형태(abs_target) 둘 다 후보로 남긴다 — 응답 프로즈에서 모델이 둘 중
         # 뭘 그대로 되풀이할지 알 수 없어서 둘 다 치환 대상으로 잡는다.
         old_candidates = list({raw_path, str(abs_target)})
-        _last_redirect_by_session[session_id] = (old_candidates, str(new_path))
+        _last_redirect_by_session.setdefault(session_id, []).append((old_candidates, str(new_path)))
     return {"action": "modify", "args": {"path": str(new_path)}}
 
 
 def inject_media_tag(response_text: str = "", session_id: str = "", **kwargs):
     """transform_llm_output — 이번 턴에 [redirect_home_dir_writes]가 실제로
-    리다이렉트한 파일이 있으면, 응답 텍스트에 남아있는 옛 경로를 새 경로로
-    바꿔치고 MEDIA: 태그를 붙인다. 모델이 리다이렉트 사실 자체를 못 챙겨서 옛
-    경로를 그대로 말하는 경우가 있어(위 주석 참고), 그 흔적을 지운다 — 안 지우면
-    채팅에 옛 경로와 새 경로가 같이 보여서 사용자가 "경로가 다르다"고 헷갈린다
-    (실측, 2026-08-30)."""
-    entry = _last_redirect_by_session.pop(session_id, None) if session_id else None
-    if not entry:
+    리다이렉트한 파일이 있으면(한 턴에 여러 번일 수 있다 — "파일 3개 만들어줘" 등),
+    각각에 대해 응답 텍스트에 남아있는 옛 경로를 새 경로로 바꿔치고 MEDIA: 태그를
+    붙인다. 모델이 리다이렉트 사실 자체를 못 챙겨서 옛 경로를 그대로 말하는 경우가
+    있어(위 주석 참고), 그 흔적을 지운다 — 안 지우면 채팅에 옛 경로와 새 경로가
+    같이 보여서 사용자가 "경로가 다르다"고 헷갈린다(실측, 2026-08-30)."""
+    entries = _last_redirect_by_session.pop(session_id, None) if session_id else None
+    if not entries:
         return None
-    old_candidates, path = entry
     text = response_text or ""
-    for old in old_candidates:
-        if old:
-            text = text.replace(old, path)
-    if f"MEDIA:{path}" not in text:
-        text = text.rstrip() + f"\n\nMEDIA:{path}"
+    tags: list[str] = []
+    for old_candidates, path in entries:
+        for old in old_candidates:
+            if old:
+                text = text.replace(old, path)
+        if f"MEDIA:{path}" not in text:
+            tags.append(f"MEDIA:{path}")
+    if tags:
+        text = text.rstrip() + "\n\n" + "\n".join(tags)
     return text
 
 
