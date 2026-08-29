@@ -125,18 +125,29 @@ class ChatConversationState(
         revision++
     }
 
+    /** 스트림이 정상 완료 이벤트 없이 예외로 끝나면(연결 끊김, 게이트웨이 재시작 등)
+     * [failCurrentTurn]과 동일하게 처리한다 — 안 그러면 [isRunning]이 영원히 true로
+     * 남아 전송/마이크/첨부가 전부 영구 잠긴다(실측 버그, 2026-08-29). 정상 완료는
+     * 서버가 스트림을 그냥 닫는 것(EOF)이라 예외 없이 `.collect`가 끝나므로 이 catch랑
+     * 안 겹친다(`UrlConnectionSseTransport` 확인 완료). */
     private fun collect(runId: String) {
         scope.launch {
-            client().events(runId)
-                .flowOn(Dispatchers.IO)
-                .collect { event ->
-                    messages = ChatReducer.applyEvent(messages, event)
-                    revision++
-                    if (event is RunEvent.RunCompleted || event is RunEvent.RunFailed || event is RunEvent.RunCancelled) {
-                        isRunning = false
-                        notifyComplete()
+            try {
+                client().events(runId)
+                    .flowOn(Dispatchers.IO)
+                    .collect { event ->
+                        messages = ChatReducer.applyEvent(messages, event)
+                        revision++
+                        if (event is RunEvent.RunCompleted || event is RunEvent.RunFailed || event is RunEvent.RunCancelled) {
+                            isRunning = false
+                            notifyComplete()
+                        }
                     }
+            } catch (e: Exception) {
+                if (isRunning) {
+                    failCurrentTurn("연결 끊김: ${e.javaClass.simpleName}: ${e.message}")
                 }
+            }
         }
     }
 
