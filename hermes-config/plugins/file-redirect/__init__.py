@@ -18,6 +18,13 @@ cwd는 pre_tool_call 파이썬 플러그인 콜백 페이로드에 없다(셸 �
 `.hermes/plans/<날짜>-....md`로 쓴 케이스를 놓쳤다 — parent가 정확히 home이
 아니라(`.hermes/plans`) 리다이렉트가 아예 안 걸렸다. `.hermes/` 하위 전체를
 추가로 잡도록 넓혔다.
+
+**확장자 화이트리스트는 완전히 버렸다**(2026-08-30, 3번째 실측 실패 후): 처음엔
+.md/.txt/.csv/.json만 잡았다가 architecture-diagram이 .html을 써서 놓쳤고(추가),
+그다음 excalidraw가 .excalidraw를 써서 또 놓쳤다 — 새 스킬이 등장할 때마다
+새 확장자가 나오는 두더지잡기였다. 위치(홈 루트 또는 .hermes/ 하위) 하나만으로도
+이미 충분히 좁은 신호라서(실제 코딩 작업은 절대 이 두 곳에 안 씀) 확장자는 더
+이상 안 본다 — 무슨 확장자든 이 위치에 쓰면 사용자에게 전달하려는 산출물이다.
 """
 
 from __future__ import annotations
@@ -26,12 +33,6 @@ import os
 import re
 from pathlib import Path
 
-# 실측(2026-08-30): "다이어그램 그려줘" 요청은 comfyui가 아니라 architecture-diagram/
-# excalidraw 같은 별도 스킬로 감(모델이 diffusion 모델로는 글자 있는 도형을 못 그린다는
-# 걸 정확히 판단함) — 근데 architecture-diagram은 .html로 저장해서(SVG를 HTML에
-# 감싸는 형식) 이 목록에 없어 리다이렉트가 안 걸렸다. 홈 디렉터리에 그대로 남는
-# 원래 버그가 재현됨. .html 추가.
-_DOC_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".html"}
 # upload-server가 폰에 서빙하는 위치 — 리포마다/기기마다 클론 경로가 다를 수 있어
 # env var로 오버라이드 가능하게 한다(comfyui_bridge/config.py, file_export/config.py와
 # 같은 패턴). 기본값은 이 리포의 표준 설치 경로(C:\hermes).
@@ -91,8 +92,7 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
     in_hermes_dir = (home / ".hermes") in abs_target.parents
     if not (in_home_root or in_hermes_dir):
         return None
-    if abs_target.suffix.lower() not in _DOC_EXTENSIONS:
-        return None
+    # 확장자는 안 본다 — 위 docstring 참고(두더지잡기였다).
 
     _GENERATED_FILES_DIR.mkdir(parents=True, exist_ok=True)
     new_path = _GENERATED_FILES_DIR / _sanitize_filename(abs_target.name)
