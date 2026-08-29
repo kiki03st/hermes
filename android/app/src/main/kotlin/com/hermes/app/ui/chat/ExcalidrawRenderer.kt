@@ -22,8 +22,12 @@ fun isExcalidrawFile(filename: String): Boolean = filename.endsWith(".excalidraw
  * 돌려준다(공식 문서 확인) — 비동기 IIFE로 감싸서 최대한 넓은 WebView 버전과 호환되게
  * 한다(top-level await 대신).
  *
- * 실기기 검증 완료(2026-08-30) — CDN import + exportToSvg 렌더링 정상 작동함. 렌더링
- * 실패 시엔 화면에 에러 문구가 뜨게 만들어뒀다(무한 빈 화면 대신).
+ * 실기기 검증(2026-08-30): 처음엔 됐는데, 이후 재현 시 **하얀 화면만 뜨는** 실패가
+ * 나왔다 — 정적 `import` 문은 모듈 자체(네트워크/CORS/버전 등)가 실패하면 그 실패가
+ * try/catch **밖**에서 일어나서 에러 문구를 못 띄웠다(가장 그럴듯한 원인, 콘솔 로그를
+ * 못 봐서 확정은 아니다). 동적 `import()`로 바꿔서 모듈 로드 실패까지 같은 try/catch
+ * 안에서 잡히게 했고, `window.onerror`/`unhandledrejection`도 추가로 걸어서 정말
+ * 예상 못 한 실패까지도 빈 화면 대신 에러 문구가 뜨게 했다.
  *
  * [sceneJson] 안의 `</script`는 그대로 두면 HTML 파서가 스크립트 태그를 조기 종료시켜
  * 페이지를 깨뜨린다 — 있을 가능성은 낮지만(엘리먼트 텍스트 안에 우연히 들어갈 수 있음)
@@ -47,10 +51,18 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
         |<body>
         |<div id="root"><div id="error"></div></div>
         |<script type="module">
-        |  import { exportToSvg } from "https://unpkg.com/@excalidraw/utils@0.1.3-test32/dist/prod/index.js";
+        |  function showError(msg) {
+        |    document.getElementById('error').textContent = 'Excalidraw 렌더링 실패: ' + msg;
+        |  }
+        |  // 정적 import는 모듈 로드 실패(네트워크/CORS/버전 문제 등)가 try/catch 밖에서
+        |  // 일어나 에러를 못 잡는다(실측: 하얀 화면만 뜨는 실패가 있었다, 2026-08-30) —
+        |  // 동적 import()로 바꿔서 모듈 로드 실패까지 여기서 잡는다.
+        |  window.addEventListener('error', (e) => showError(e.message || String(e)));
+        |  window.addEventListener('unhandledrejection', (e) => showError((e.reason && e.reason.message) || String(e.reason)));
         |  const scene = $escapedScene;
         |  (async () => {
         |    try {
+        |      const { exportToSvg } = await import("https://unpkg.com/@excalidraw/utils@0.1.3-test32/dist/prod/index.js");
         |      const svg = await exportToSvg({
         |        elements: scene.elements || [],
         |        appState: Object.assign({ viewBackgroundColor: "#ffffff" }, scene.appState || {}),
@@ -60,7 +72,7 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
         |      root.innerHTML = '';
         |      root.appendChild(svg);
         |    } catch (e) {
-        |      document.getElementById('error').textContent = 'Excalidraw 렌더링 실패: ' + (e && e.message ? e.message : e);
+        |      showError(e && e.message ? e.message : String(e));
         |    }
         |  })();
         |</script>

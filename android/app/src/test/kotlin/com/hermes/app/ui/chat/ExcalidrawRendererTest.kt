@@ -26,7 +26,7 @@ class ExcalidrawRendererTest {
         val html = buildExcalidrawViewerHtml(scene)
 
         assertTrue(html.contains(scene))
-        assertTrue(html.contains("import { exportToSvg }"))
+        assertTrue(html.contains("await import("))
         // 실측 확인(2026-08-30): 안정 태그 0.1.2엔 exportToSvg 함수 자체가 없다(번들
         // 직접 받아서 문자열 검색, 0개 매치 — 다른 용도의 UMD 번들이었다). 문서에 나온
         // exportToSvg는 "-test32" 프리릴리즈 dist-tag에만 있어서, 이름이 마음에 안
@@ -47,12 +47,22 @@ class ExcalidrawRendererTest {
     }
 
     @Test
+    fun `buildExcalidrawViewerHtml catches module load and unhandled errors, not just the try block`() {
+        // 실측 버그(2026-08-30): 정적 import가 실패하면 try/catch 밖에서 일어나서 하얀
+        // 화면만 뜨고 에러가 안 보였다 — 동적 import() + 전역 에러 핸들러로 고쳤다.
+        val html = buildExcalidrawViewerHtml("""{"elements": []}""")
+
+        assertTrue(html.contains("addEventListener('error'"))
+        assertTrue(html.contains("addEventListener('unhandledrejection'"))
+    }
+
+    @Test
     fun `resolveWebViewHtml wraps excalidraw scenes through the exportToSvg viewer`() {
         val scene = """{"elements": []}"""
 
         val html = resolveWebViewHtml("diagram.excalidraw", "application/json", scene)
 
-        assertTrue(html != null && html.contains("import { exportToSvg }"))
+        assertTrue(html != null && html.contains("await import("))
     }
 
     @Test
