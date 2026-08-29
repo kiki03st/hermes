@@ -16,6 +16,10 @@ class FileUploadClientTest {
     private var responseStatus = 200
     private var responseBody = """{"path":"/tmp/x_a.txt","note":"note-text"}"""
 
+    private var downloadAuthHeader: String? = null
+    private var downloadStatus = 200
+    private var downloadBody: ByteArray = "png-bytes".toByteArray()
+
     @Before
     fun startServer() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -25,6 +29,11 @@ class FileUploadClientTest {
             val bytes = responseBody.toByteArray(Charsets.UTF_8)
             exchange.sendResponseHeaders(responseStatus, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
+        }
+        server.createContext("/generated/comfyui/a.png") { exchange: HttpExchange ->
+            downloadAuthHeader = exchange.requestHeaders.getFirst("Authorization")
+            exchange.sendResponseHeaders(downloadStatus, downloadBody.size.toLong())
+            exchange.responseBody.use { it.write(downloadBody) }
         }
         server.start()
     }
@@ -75,5 +84,25 @@ class FileUploadClientTest {
 
         check(outcome is UploadOutcome.Failure)
         assertEquals(0, outcome.statusCode)
+    }
+
+    @Test
+    fun `downloadGenerated sends bearer auth and returns the file bytes`() {
+        val outcome = client().downloadGenerated("comfyui", "a.png")
+
+        check(outcome is DownloadOutcome.Success)
+        assertTrue(outcome.bytes.contentEquals("png-bytes".toByteArray()))
+        assertEquals("Bearer test-key", downloadAuthHeader)
+    }
+
+    @Test
+    fun `downloadGenerated surfaces failure on non-2xx status`() {
+        downloadStatus = 404
+        downloadBody = """{"error":"파일을 찾을 수 없음"}""".toByteArray()
+
+        val outcome = client().downloadGenerated("comfyui", "a.png")
+
+        check(outcome is DownloadOutcome.Failure)
+        assertEquals(404, outcome.statusCode)
     }
 }

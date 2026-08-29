@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hermes.app.ConversationTurn
+import com.hermes.app.DownloadOutcome
+import com.hermes.app.MediaDownloadClient
 import com.hermes.app.RunEvent
 import com.hermes.app.RunStartOutcome
 import com.hermes.app.RunsClient
@@ -24,6 +26,7 @@ class ChatConversationState(
     private val scope: CoroutineScope,
     private val sessionKey: () -> String?,
     private val client: () -> RunsClient,
+    private val mediaClient: () -> MediaDownloadClient,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     var messages: List<ChatMessage> by mutableStateOf(emptyList())
@@ -138,6 +141,9 @@ class ChatConversationState(
                     .collect { event ->
                         messages = ChatReducer.applyEvent(messages, event)
                         revision++
+                        if (event is RunEvent.RunCompleted) {
+                            downloadPendingMedia()
+                        }
                         if (event is RunEvent.RunCompleted || event is RunEvent.RunFailed || event is RunEvent.RunCancelled) {
                             isRunning = false
                             notifyComplete()
@@ -147,6 +153,32 @@ class ChatConversationState(
                 if (isRunning) {
                     failCurrentTurn("연결 끊김: ${e.javaClass.simpleName}: ${e.message}")
                 }
+            }
+        }
+    }
+
+    /** [RunEvent.RunCompleted] 처리로 새로 생긴 [MediaStatus.Loading] 미디어를
+     * `upload-server`에서 받아온다. 다운로드는 네트워크 IO라 여기(코루틴 홈)에서
+     * 처리하고, [ChatReducer]는 순수 함수로 남긴다 — 첨부 업로드가 `ChatScreen`에서
+     * 처리되는 것과 대칭 구조(설계 문서: `docs/superpowers/specs/2026-08-29-image-viewer-design.md`). */
+    private fun downloadPendingMedia() {
+        val turn = messages.lastOrNull() as? ChatMessage.AssistantTurn ?: return
+        val turnId = turn.id
+        turn.media.filter { it.status is MediaStatus.Loading }.forEach { item ->
+            scope.launch {
+                val outcome = withContext(Dispatchers.IO) {
+                    try {
+                        mediaClient().downloadGenerated(item.tool, item.filename)
+                    } catch (e: Exception) {
+                        DownloadOutcome.Failure(0, "네트워크 오류: ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                }
+                val status = when (outcome) {
+                    is DownloadOutcome.Success -> MediaStatus.Loaded(outcome.bytes)
+                    is DownloadOutcome.Failure -> MediaStatus.Failed("${outcome.statusCode}: ${outcome.message}")
+                }
+                messages = ChatReducer.applyMediaStatus(messages, turnId, item.id, status)
+                revision++
             }
         }
     }

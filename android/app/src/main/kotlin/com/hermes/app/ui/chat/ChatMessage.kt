@@ -26,6 +26,7 @@ sealed interface ChatMessage {
         val toolActivity: List<ToolActivity> = emptyList(),
         val approval: PendingApproval? = null,
         val error: String? = null,
+        val media: List<ChatMedia> = emptyList(),
     ) : ChatMessage
 
     /** run.cancelled, 시작 실패 등 대화 흐름에 넣을 만한 시스템 메시지. */
@@ -35,6 +36,24 @@ sealed interface ChatMessage {
 data class ToolActivity(val tool: String, val state: ToolState)
 
 enum class ToolState { RUNNING, DONE, ERROR }
+
+/**
+ * `MEDIA:<generated 하위 경로>` 태그에서 파싱된 생성 이미지 하나(설계 문서:
+ * `docs/superpowers/specs/2026-08-29-image-viewer-design.md`). [tool]/[filename]은
+ * `upload-server`의 `GET /generated/{tool}/{filename}`을 그대로 호출하는 데 쓴다.
+ */
+data class ChatMedia(
+    val id: String,
+    val tool: String,
+    val filename: String,
+    val status: MediaStatus = MediaStatus.Loading,
+)
+
+sealed interface MediaStatus {
+    data object Loading : MediaStatus
+    data class Loaded(val bytes: ByteArray) : MediaStatus
+    data class Failed(val message: String) : MediaStatus
+}
 
 /**
  * [choices]는 트러스트 게이트가 상황별로 좁혀서 주는 값이라 하드코딩 금지 — 그대로

@@ -162,4 +162,68 @@ class ChatReducerTest {
         val notice = result.single() as ChatMessage.SystemNotice
         assertEquals("업로드 실패: 네트워크 오류", notice.text)
     }
+
+    @Test
+    fun `parseGeneratedMediaPath extracts tool and filename from a Windows generated path`() {
+        val result = ChatReducer.parseGeneratedMediaPath(
+            "C:\\hermes\\upload-server\\generated\\comfyui\\b7016299_hermes_00004_.png",
+        )
+
+        assertEquals("comfyui" to "b7016299_hermes_00004_.png", result)
+    }
+
+    @Test
+    fun `parseGeneratedMediaPath accepts forward-slash paths case-insensitively`() {
+        val result = ChatReducer.parseGeneratedMediaPath(
+            "/home/user/upload-server/Generated/comfyui/a.png",
+        )
+
+        assertEquals("comfyui" to "a.png", result)
+    }
+
+    @Test
+    fun `parseGeneratedMediaPath returns null for paths without a generated segment`() {
+        assertNull(ChatReducer.parseGeneratedMediaPath("C:\\hermes\\mcp-comfyui-bridge\\generated_old\\a.png"))
+        assertNull(ChatReducer.parseGeneratedMediaPath("C:\\Users\\ksy\\photo.png"))
+    }
+
+    @Test
+    fun `run completed with a MEDIA generated tag strips the line and adds ChatMedia`() {
+        val json = """{"event": "run.completed", "run_id": "run_x", "timestamp": 1.0, "output": "여기 있어요!\n\nMEDIA:C:\\hermes\\upload-server\\generated\\comfyui\\a.png\n\n마음에 드세요?", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}"""
+
+        val turn = turnFrom(json)
+
+        assertTrue(!turn.textSoFar.contains("MEDIA:"))
+        assertTrue(turn.textSoFar.contains("여기 있어요!"))
+        assertTrue(turn.textSoFar.contains("마음에 드세요?"))
+        assertEquals(1, turn.media.size)
+        assertEquals("comfyui", turn.media[0].tool)
+        assertEquals("a.png", turn.media[0].filename)
+        assertEquals(MediaStatus.Loading, turn.media[0].status)
+    }
+
+    @Test
+    fun `run completed with a MEDIA tag outside the whitelist leaves the text untouched`() {
+        val json = """{"event": "run.completed", "run_id": "run_x", "timestamp": 1.0, "output": "MEDIA:C:\\Users\\ksy\\Desktop\\photo.png", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}"""
+
+        val turn = turnFrom(json)
+
+        assertTrue(turn.textSoFar.contains("MEDIA:"))
+        assertTrue(turn.media.isEmpty())
+    }
+
+    @Test
+    fun `applyMediaStatus updates only the matching media item on the matching turn`() {
+        val json = """{"event": "run.completed", "run_id": "run_x", "timestamp": 1.0, "output": "MEDIA:C:\\upload-server\\generated\\comfyui\\a.png", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}"""
+        var messages = ChatReducer.startAssistantTurn(emptyList())
+        messages = ChatReducer.applyEvent(messages, RunEvent.parse(json)!!)
+        val turn = messages.last() as ChatMessage.AssistantTurn
+        val mediaId = turn.media.single().id
+        val bytes = byteArrayOf(1, 2, 3)
+
+        messages = ChatReducer.applyMediaStatus(messages, turn.id, mediaId, MediaStatus.Loaded(bytes))
+
+        val updated = messages.last() as ChatMessage.AssistantTurn
+        assertEquals(MediaStatus.Loaded(bytes), updated.media.single().status)
+    }
 }

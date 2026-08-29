@@ -56,8 +56,10 @@ object ChatReducer {
             is RunEvent.ApprovalResponded ->
                 turn.copy(approval = null)
 
-            is RunEvent.RunCompleted ->
-                turn.copy(textSoFar = event.output.ifBlank { turn.textSoFar }, isStreaming = false)
+            is RunEvent.RunCompleted -> {
+                val (cleaned, media) = extractMedia(event.output.ifBlank { turn.textSoFar })
+                turn.copy(textSoFar = cleaned, isStreaming = false, media = media)
+            }
 
             is RunEvent.RunFailed ->
                 turn.copy(isStreaming = false, error = event.error)
@@ -74,6 +76,53 @@ object ChatReducer {
         } else {
             withUpdatedTurn
         }
+    }
+
+    /** [messages]에서 [turnId] 턴의 [mediaId] 미디어 항목만 [status]로 갱신한다 —
+     * 다운로드는 IO라 [ChatConversationState]가 코루틴으로 처리하고, 그 결과 반영은
+     * 여기(순수 함수)에 위임한다. */
+    fun applyMediaStatus(messages: List<ChatMessage>, turnId: String, mediaId: String, status: MediaStatus): List<ChatMessage> =
+        messages.map { msg ->
+            if (msg is ChatMessage.AssistantTurn && msg.id == turnId) {
+                msg.copy(media = msg.media.map { if (it.id == mediaId) it.copy(status = status) else it })
+            } else {
+                msg
+            }
+        }
+
+    /** `MEDIA:<path>`에서 `.../generated/<tool>/<filename>` 형태만 파싱한다(구분자
+     * `\`/`/` 둘 다, 대소문자 무관) — 화이트리스트 밖 경로는 `null`을 돌려주고 호출자는
+     * 원본 텍스트를 그대로 둔다(설계 문서 §에러 처리 — 임의 경로를 다운로드 시도하지
+     * 않는다). */
+    fun parseGeneratedMediaPath(path: String): Pair<String, String>? {
+        val normalized = path.replace('\\', '/')
+        val idx = normalized.indexOf("/generated/", ignoreCase = true)
+        if (idx == -1) return null
+        val rest = normalized.substring(idx + "/generated/".length)
+        val parts = rest.split('/', limit = 2)
+        if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) return null
+        return parts[0] to parts[1]
+    }
+
+    private val MEDIA_LINE = Regex("""^MEDIA:(\S+)$""")
+
+    /** [text]를 줄 단위로 스캔해 `MEDIA:<generated 하위 경로>` 줄을 떼어내고(사용자
+     * 승인 사항 — 원본 경로 텍스트는 안 보여줌) [ChatMedia] 목록으로 돌려준다.
+     * `run.completed`의 최종 텍스트에만 적용한다 — 스트리밍 중간 델타는 태그가 아직
+     * 안 끝났을 수 있어 건드리지 않는다(설계 문서 §데이터 흐름). */
+    private fun extractMedia(text: String): Pair<String, List<ChatMedia>> {
+        val media = mutableListOf<ChatMedia>()
+        val keptLines = text.lines().filter { line ->
+            val match = MEDIA_LINE.matchEntire(line.trim())
+            val parsed = match?.let { parseGeneratedMediaPath(it.groupValues[1]) }
+            if (parsed != null) {
+                media += ChatMedia(id = newId(), tool = parsed.first, filename = parsed.second)
+                false
+            } else {
+                true
+            }
+        }
+        return keptLines.joinToString("\n").trim() to media
     }
 
     /** 같은 도구 이름의 RUNNING 중 가장 최근 것을 완료 상태로 바꾼다 — `tool.completed`엔

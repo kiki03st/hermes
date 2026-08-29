@@ -35,6 +35,12 @@ object HermesRuntime {
                     apiKey = { currentSettings.apiKey },
                 )
             },
+            mediaClient = {
+                FileUploadClient(
+                    uploadServerUrl = { currentSettings.uploadServerUrl },
+                    apiKey = { currentSettings.apiKey },
+                )
+            },
         )
         applicationScope.launch {
             settingsStore.settingsFlow.collect { currentSettings = it }

@@ -1,5 +1,7 @@
 package com.hermes.app.ui.chat
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -20,8 +23,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
@@ -112,6 +117,8 @@ private fun AssistantBubble(turn: ChatMessage.AssistantTurn, onApprovalChoice: (
                     TypingIndicator()
                 }
 
+                turn.media.forEach { media -> MediaImage(media) }
+
                 turn.error?.let {
                     Text(
                         text = "오류: $it",
@@ -125,6 +132,43 @@ private fun AssistantBubble(turn: ChatMessage.AssistantTurn, onApprovalChoice: (
                 }
             }
         }
+    }
+}
+
+/** 원본 `MEDIA:` 텍스트 줄은 [ChatReducer]가 이미 떼어냈다(승인된 방향 — 경로 문자열은
+ * 사용자에게 무의미하므로 안 보여준다) — 여기선 이 자리에 이미지/로딩/에러만 그린다. */
+@Composable
+private fun MediaImage(media: ChatMedia) {
+    when (val status = media.status) {
+        is MediaStatus.Loading ->
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+
+        is MediaStatus.Loaded -> {
+            val bitmap = remember(media.id) {
+                runCatching { BitmapFactory.decodeByteArray(status.bytes, 0, status.bytes.size)?.asImageBitmap() }
+                    .getOrNull()
+            }
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = media.filename,
+                    modifier = Modifier.widthIn(max = 280.dp),
+                )
+            } else {
+                Text(
+                    text = "이미지를 표시할 수 없습니다",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
+        is MediaStatus.Failed ->
+            Text(
+                text = "이미지를 불러올 수 없습니다: ${status.message}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
     }
 }
 
