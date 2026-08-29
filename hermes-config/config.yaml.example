@@ -72,6 +72,10 @@ mcp_servers:
         - "max_setup_camera_script"
         - "max_setup_lighting_script"
         - "max_render_to_file_script"
+        # SketchUp/Max 산출물은 Ruby/MAXScript 실행 결과라 acad-assist가 직접 못
+        # 봄 — export처럼 자동 등록이 안 되니 에이전트가 성공 확인 후 이걸로 직접
+        # meta.json에 등록한다(2026-08-29 추가, cad-pipeline.md 참고).
+        - "register_artifact"
 
   # --- 3D 모델링 (SketchUp Pro) ---
   # mhyrr/sketchup-mcp.

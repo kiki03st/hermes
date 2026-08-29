@@ -32,7 +32,7 @@ description: 도면(AutoCAD) → 모델(SketchUp Pro) → 렌더(3ds Max + V-Ray
 |---|---|---|---|
 | AutoCAD 조회 | `acad-read` | full | `status`, `query`, `get`, `purge_check`, `capture` |
 | AutoCAD 쓰기 | `acad-write` | untrusted (폰 승인 필요) | `modify`, `layer`, `export` |
-| 파이프라인 생성기 | `cad-pipeline` | full | `sketchup_import_dwg_script`, `sketchup_extrude_walls_script`, `sketchup_save_skp_script`, `sketchup_export_fbx_script`, `sketchup_capture_iso_script`, `sketchup_unit_check_script`, `max_import_skp_script`, `max_setup_camera_script`, `max_setup_lighting_script`, `max_render_to_file_script` |
+| 파이프라인 생성기 | `cad-pipeline` | full | `sketchup_import_dwg_script`, `sketchup_extrude_walls_script`, `sketchup_save_skp_script`, `sketchup_export_fbx_script`, `sketchup_capture_iso_script`, `sketchup_unit_check_script`, `max_import_skp_script`, `max_setup_camera_script`, `max_setup_lighting_script`, `max_render_to_file_script`, `register_artifact` |
 | AutoCAD 작도 | `acad2d`(CAD-MCP) | (미지정=full) | `draw_line`/`draw_circle`/`draw_arc`/`draw_ellipse`/`draw_polyline`/`draw_rectangle`/`draw_text`/`draw_hatch`/`add_dimension`/`save_drawing` (`process_command` 차단) |
 | SketchUp | `sketchup` | full | sketchup-mcp 자체 도구(`create_component` 등) + **`eval_ruby`** |
 | 3ds Max | `max3d` | untrusted | 3dsmax-mcp core 프로파일 중 선정된 것 + `execute_maxscript` |
@@ -72,10 +72,11 @@ description: 도면(AutoCAD) → 모델(SketchUp Pro) → 렌더(3ds Max + V-Ray
    산출물이다(Max는 `.skp`를 직접 임포트하는 게 확정안이라 FBX가 없어도 파이프라인은
    안 끊긴다). FBX는 SketchUp **Pro** 전용 기능이다.
 6. `sketchup_capture_iso_script(output_path)`로 아이소메트릭 캡처.
-7. **`meta.json` 등록은 아직 자동화 안 됨** — 생성기가 `projects.register_artifact`를
-   직접 호출하지 않는다(Ruby 실행 결과를 acad-assist가 볼 방법이 없어서). 지금은 이 단계
-   완료 후 acad-assist에 별도 산출물 등록 도구가 필요하다는 게 확인된 실제 공백이다 —
-   대상 환경 작업 시 추가할 것.
+7. `sketchup_save_skp_script` 실행이 성공했으면(임포트/압출 단계에서 이미 확인한 엔티티
+   수 비교로 판단) `register_artifact(project, stage="model", kind="skp", path=...)`를
+   불러 `02-model/model.skp`를 `meta.json`에 등록한다 — 다음 단계(3ds Max)가 여기서
+   찾는다. `export`처럼 acad-assist가 자동으로 등록해주지 않는 이유: Ruby 실행 결과를
+   acad-assist가 직접 볼 방법이 없어서, 에이전트가 성공을 확인한 뒤 직접 불러야 한다.
 
 ### 3. 3ds Max + V-Ray — 렌더 (`cad-pipeline` 생성기 + `max3d`의 `execute_maxscript`)
 1. `max_import_skp_script(skp_path)`로 `.skp`를 직접 임포트(FBX 아님)하는 MAXScript를 받아
@@ -97,6 +98,8 @@ description: 도면(AutoCAD) → 모델(SketchUp Pro) → 렌더(3ds Max + V-Ray
      명시적 `width`/`height`로 덮어쓸 수도 있다.
    - 렌더 완료는 출력 파일이 실제로 생겼는지로 검증한다(자기 보고 아님) — 없으면 MAXScript가
      직접 `throw`해서 `execute_maxscript`의 에러 경로로 실패가 올라간다.
+   - 출력 파일 생성을 확인했으면 `register_artifact(project, stage="render", kind="png",
+     path=...)`로 `03-render/persp_4k.png`를 `meta.json`에 등록한다.
 4. 렌더는 오래 걸린다 — **`POST /v1/runs`로 실행하고 진행 상황은 `/events` SSE로
    구독한다.** 워치엔 완료 알림을 push한다(3dsmax-mcp의 `render_automations`가 이 용도에
    맞지만 `full` 프로파일이 필요하다 — 지금 `max3d`는 `core`만 켜져 있어 미포함, 필요해지면
@@ -143,13 +146,13 @@ description: 도면(AutoCAD) → 모델(SketchUp Pro) → 렌더(3ds Max + V-Ray
 - [x] ~~단위계 불일치 발견 시 자동 보정 여부 결정~~ — **fail-loud로 확정.** 자동 보정 안 함.
 - [x] ~~max3d 도구 필터 목록을 실제 이름으로 보정~~ — `config.yaml.example`에 반영 완료
       (조사 기반). 단, 최종 확정은 대상 환경에서 `hermes mcp list`로.
-- [ ] SketchUp/Max 산출물을 `meta.json`에 자동 등록하는 도구가 없다 — 지금은 AutoCAD
-      쪽(`export`의 `project=`)만 된다. SketchUp/Max는 Ruby/MAXScript 실행 결과를
-      acad-assist가 볼 방법이 없어서 별도 설계가 필요하다.
+- [x] ~~SketchUp/Max 산출물을 `meta.json`에 자동 등록하는 도구가 없다~~ — **해결
+      (2026-08-29)**. `register_artifact` MCP 도구 추가(`cad-pipeline` 그룹,
+      196개 pytest 통과) — Ruby/MAXScript 실행 성공을 에이전트가 확인한 뒤 직접
+      호출해서 등록한다. §2/§3에 호출 시점 반영.
 - [ ] 캡처 PNG·렌더 결과를 폰이 실제로 "보는" 통로가 없다 — `/v1/runs` 이벤트가 도구
-      결과를 안 실어준다. `docs/setup-cad-workstation.md`와
-      `android/app/src/main/kotlin/com/hermes/app/ui/RunsSection.kt`의 문서 주석에
-      같은 문제가 기록돼 있다.
+      결과를 안 실어준다. 폰 앱 쪽 "이미지 뷰어" 기능(진행 중)이 끝나면 같이 풀리는
+      문제다.
 - [ ] 카메라/조명 기본값(`max_setup_camera_script`/`max_setup_lighting_script`)이 실제
       장면에서 쓸 만한지 검증 전.
 - [ ] 벽 압출의 "닫힌 면이 이미 있다" 가정이 실제 DWG 도면 관례와 맞는지 검증 전.

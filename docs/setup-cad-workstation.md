@@ -79,11 +79,11 @@ cd ..
 cd <이 리포 경로>\mcp-acad-assist
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
-.venv\Scripts\python.exe -m pytest -v   # 18(Stage 3) + 신규분 — 전부 통과해야 함, 실 AutoCAD 없이도
+.venv\Scripts\python.exe -m pytest -v   # 196개 — 전부 통과해야 함, 실 AutoCAD 없이도
 
 # server.py 의 import 가 실제로 되는지 (mcp SDK 버전에 따라 엔트리포인트가 다를 수 있다)
 .venv\Scripts\python.exe -c "from acad_assist import server; print(len(server.mcp._tool_manager.list_tools()), 'tools')"
-# → 18 tools 가 나와야 한다
+# → 19 tools 가 나와야 한다 (2026-08-29: register_artifact 추가로 18→19)
 ```
 
 `hermes-config/config.yaml.example`을 `%LOCALAPPDATA%\hermes\config.yaml`에 병합 —

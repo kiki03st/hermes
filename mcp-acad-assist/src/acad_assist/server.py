@@ -7,9 +7,14 @@ Ruby/MAXScript 생성기를 제공한다 (PLAN.md 참고).
 
 - `READ_ONLY_TOOLS`(5) — AutoCAD COM 조회. `acad-read`(trust: full)로 등록.
 - `WRITE_TOOLS`(3) — AutoCAD COM 쓰기. `acad-write`(trust: untrusted)로 등록.
-- `PIPELINE_TOOLS`(10) — SketchUp/3ds Max Ruby·MAXScript **텍스트 생성기**.
-  COM 을 안 건드리고 부작용이 전혀 없어(문자열만 돌려준다) 전부 읽기 전용이다.
-  `cad-pipeline`(trust: full)로 등록. 생성된 텍스트는 Hermes가 `eval_ruby`
+- `PIPELINE_TOOLS`(11) — SketchUp/3ds Max Ruby·MAXScript **텍스트 생성기** 10개 +
+  `register_artifact` 1개. 생성기들은 COM 을 안 건드리고 부작용이 전혀 없어
+  (문자열만 돌려준다) 읽기 전용이다. `register_artifact`는 실제로 `meta.json`에
+  파일을 쓰지만, CAD 문서/COM 은 안 건드리는 순수 북키핑이라 같은 신뢰 수준
+  (trust: full)으로 묶는다 — SketchUp/3ds Max 산출물은 Ruby/MAXScript 실행
+  결과라 acad-assist 가 직접 볼 방법이 없어서, `export`처럼 자동 등록을 못 하고
+  에이전트가 성공을 확인한 뒤 이 도구로 직접 등록해야 한다. 전부 `cad-pipeline`
+  (trust: full)로 등록. 생성기가 만든 텍스트는 Hermes가 `eval_ruby`
   (sketchup-mcp)/`execute_maxscript`(3dsmax-mcp)에 **한 글자도 고치지 않고**
   그대로 넘겨야 한다 — 그래야 골든 테스트가 고정한 계약이 실제 실행에도
   적용된다 (`hermes-config/skills/cad-pipeline.md`가 이 규칙을 명시한다).
@@ -34,6 +39,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from . import maxscripts as _maxscripts
+from . import projects as _projects
 from . import sketchup_scripts as _sketchup
 from .capture import acad_capture
 from .com import ComWorker, Win32AcadPort
@@ -56,6 +62,7 @@ PIPELINE_TOOLS: tuple[str, ...] = (
     "max_setup_camera_script",
     "max_setup_lighting_script",
     "max_render_to_file_script",
+    "register_artifact",
 )
 
 _READ_ONLY = ToolAnnotations(read_only_hint=True)
@@ -247,6 +254,28 @@ def max_render_to_file_script(
     return _maxscripts.render_to_file_script(
         output_path, preset, width=width, height=height
     )
+
+
+@mcp.tool(annotations=_READ_ONLY)
+def register_artifact(
+    project: str,
+    stage: str,
+    kind: str,
+    path: str,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """SketchUp/3ds Max 단계 산출물을 `<project>/meta.json`에 기록한다.
+
+    `export`는 AutoCAD 내보내기가 성공하면 acad-assist 자신이 자동으로 등록하지만,
+    SketchUp(`.skp`)/3ds Max(렌더 PNG 등) 산출물은 Hermes의 `eval_ruby`/
+    `execute_maxscript`가 실행한 결과라 acad-assist가 직접 확인할 방법이 없다 —
+    그 실행이 성공했음을 (오브젝트 수 증가, 출력 파일 존재 등으로) 확인한 뒤 이
+    도구로 직접 등록해야 다음 단계가 `meta.json`에서 이 산출물을 찾을 수 있다.
+
+    stage는 "model"(SketchUp) 또는 "render"(3ds Max), kind는 "skp"/"fbx"/"png" 등
+    자유 문자열. 같은 (stage, kind)로 다시 부르면 최신 것으로 덮어쓴다.
+    """
+    return _projects.register_artifact(project, stage, kind, path, extra=extra)
 
 
 def main() -> None:

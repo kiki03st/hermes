@@ -18,11 +18,11 @@ def _tools_by_name() -> dict[str, object]:
     return {t.name: t for t in server.mcp._tool_manager.list_tools()}
 
 
-def test_all_eighteen_tools_are_registered():
+def test_all_nineteen_tools_are_registered():
     tools = _tools_by_name()
     all_names = set(server.READ_ONLY_TOOLS) | set(server.WRITE_TOOLS) | set(server.PIPELINE_TOOLS)
     assert set(tools) == all_names
-    assert len(tools) == 18
+    assert len(tools) == 19
 
 
 def test_tool_groups_do_not_overlap():
@@ -181,3 +181,30 @@ def test_pipeline_tools_accept_plain_list_coordinates():
     기대하는 tuple 이 아니다. server.py 가 변환을 책임진다."""
     script = server.max_setup_camera_script([100.0, 200.0, 300.0], [0.0, 0.0, 0.0])
     assert "pos:[100.0,200.0,300.0]" in script
+
+
+def test_register_artifact_tool_records_sketchup_and_max_stage_output(monkeypatch, tmp_path):
+    """SketchUp/3ds Max 산출물은 acad-assist 가 실행 결과를 직접 볼 방법이 없다
+    (Ruby/MAXScript 는 Hermes 쪽 eval_ruby/execute_maxscript 가 실행한다) — 그래서
+    export 처럼 acad-assist 자신이 자동으로 등록해줄 수 없고, 에이전트가 성공을
+    확인한 뒤 이 도구로 직접 등록해야 한다(cad-pipeline.md "알려진 공백" 항목)."""
+    from acad_assist import projects
+
+    root = tmp_path / "projects"
+    monkeypatch.setenv(projects.ROOT_ENV, str(root))
+    projects.project_init("room01")
+
+    result = server.register_artifact(
+        project="room01", stage="model", kind="skp", path=str(root / "room01" / "02-model" / "model.skp")
+    )
+
+    assert result["stage"] == "model"
+    meta = projects.meta_read("room01")
+    assert meta["artifacts"][0]["kind"] == "skp"
+
+
+def test_register_artifact_tool_is_read_only_annotated():
+    """CAD 문서/COM 을 안 건드리고 meta.json 북키핑만 하므로 cad-pipeline 그룹의
+    나머지 생성기들과 같은 신뢰 수준(trust: full)이 맞다."""
+    ann = _tools_by_name()["register_artifact"].annotations
+    assert ann is not None and ann.read_only_hint is True
