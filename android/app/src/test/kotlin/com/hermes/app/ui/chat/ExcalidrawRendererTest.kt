@@ -79,4 +79,25 @@ class ExcalidrawRendererTest {
         assertEquals(null, resolveWebViewHtml("notes.md", "text/markdown", "# hi"))
         assertEquals(null, resolveWebViewHtml("data.json", "application/json", "{}"))
     }
+
+    @Test
+    fun `stripViewportMetaForInlinePreview removes the viewport meta tag`() {
+        // 실측 버그(2026-08-30): "까만 빈 박스" — architecture-diagram 산출물이 데스크톱
+        // 폭 기준 절대좌표라, viewport 메타 태그가 있으면 WebView의 축소-전체보기 모드가
+        // 안 먹혀서 인라인 미리보기엔 배경색만 보였다.
+        val html = """<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>hi</body></html>"""
+
+        val stripped = stripViewportMetaForInlinePreview(html)
+
+        assertFalse(stripped.contains("viewport"))
+        assertTrue(stripped.contains("<meta charset=\"utf-8\">"))
+        assertTrue(stripped.contains("<body>hi</body>"))
+    }
+
+    @Test
+    fun `stripViewportMetaForInlinePreview is a no-op when there is no viewport tag`() {
+        val html = "<html><body>hi</body></html>"
+
+        assertEquals(html, stripViewportMetaForInlinePreview(html))
+    }
 }

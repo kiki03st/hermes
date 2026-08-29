@@ -81,6 +81,19 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
     """.trimMargin()
 }
 
+// architecture-diagram 등의 템플릿이 넣는 <meta name="viewport" ...> 태그 — 데스크톱
+// 브라우저 폭 기준 절대좌표 레이아웃인데 이 태그가 있으면 WebView의
+// useWideViewPort/loadWithOverviewMode(좁은 뷰에 맞춰 축소해서 보여주는 설정)가
+// 안 먹힌다(페이지 자신의 viewport 선언이 우선시됨). 인라인 미리보기에서만 이 태그를
+// 지워서 축소 모드가 실제로 작동하게 한다 — 전체화면은 공간이 넉넉해서 안 건드림.
+private val _VIEWPORT_META_TAG = Regex("""<meta[^>]*name=["']viewport["'][^>]*>""", RegexOption.IGNORE_CASE)
+
+/** 버블 인라인 미리보기(작은 [InlineWebView])에서만 쓴다 — [html]에서 viewport 메타
+ * 태그를 지운다. 실측 버그(2026-08-30): architecture-diagram 산출물이 데스크톱 폭
+ * 기준 절대좌표라, 인라인의 작은 WebView에 그대로 넣으면 실제 다이어그램 내용은 화면
+ * 밖으로 벗어나고 배경색만 보였다("까만 빈 박스"). */
+fun stripViewportMetaForInlinePreview(html: String): String = _VIEWPORT_META_TAG.replace(html, "")
+
 /** [filename]/[mimeType]가 WebView로 렌더링할 대상이면(실제로 그려지는 시각 콘텐츠 —
  * architecture-diagram의 완성된 HTML, excalidraw의 scene JSON) 로드할 HTML을 만들어
  * 돌려준다. 그 외(md/txt/csv/pdf 등 순수 문서)는 null — 호출부가 `FileChip`으로
