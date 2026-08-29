@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 1 | `hermes-agent` (게이트웨이) | **아니오** — 공식 설치 스크립트로 별도 설치 | 실제 에이전트, `/v1/runs` 등 API 서버 |
 | 2 | `upload-server` | **예** — `git clone`으로 같이 옴 | 폰이 올린 파일/이미지를 게이트웨이가 읽을 디스크로 릴레이 |
-| 3 | 이미지 생성 (`image_gen.provider: fal`) | **아니오** — `config.yaml`/env 파일 설정만, 별도 설치 없음 | 폰의 "그림 그려줘" 요청을 실제 이미지 파일로 만드는 백엔드 |
+| 3 | 이미지 생성 (`mcp-comfyui-bridge` + 로컬 ComfyUI) | **부분** — MCP 서버는 `git clone`으로 같이 오지만, ComfyUI 자체는 별도 설치 + GPU 필요 | 폰의 "그림 그려줘" 요청을 실제 이미지 파일로 만드는 백엔드 |
 
 세 개 다 옮겨야 폰 앱이 지금 PC에서 하던 걸 새 PC에서도 그대로 할 수 있다. 하나라도
 빠지면 그 기능만 조용히 안 됨(예: 이미지 생성 설정 없으면 "그림 그려줘"에 텍스트 아트로
@@ -19,12 +19,19 @@
 아래 §3 참고. 1(a)+2 만 있으면 CAD/캘린더 등 MCP는 다시 등록해야 됨 — CAD는 아직 Stage 3
 미완이라 이 문서 범위 밖).
 
-> **ComfyUI는 쓰지 않는다** — 2026-08-29에 실제로 설치해서 테스트해본 결과, ComfyUI는
-> `comfy` CLI를 **터미널에서 실행**해야 동작하는데 폰이 쓰는 `api_server` 플랫폼엔
-> `terminal`/`code_execution` 툴셋 자체가 없다(§1.6 참고, CLI 세션 전용). 그래서
-> 에이전트가 스킬만 찾아보다가 이미지를 못 만들고 계속 다른 방법으로 우회 시도만
-> 반복했다(30턴 넘게, 실측). 폰에서 실제로 되는 유일한 경로는 아래 §3의 내장
-> `image_gen` provider 방식이다 — GPU도 필요 없다.
+> **2026-08-30 정정 — 실제로 쓰는 건 로컬 ComfyUI다, FAL 아니다.** 이 문서는 한동안
+> "ComfyUI는 못 쓴다, `image_gen.provider: fal`만 쓴다"고 적고 있었다. 그 근거였던
+> 2026-08-29 실측(에이전트가 이미지를 못 만들고 30턴 넘게 우회만 반복)은 **Hermes
+> 내장 `comfyui` 스킬**(터미널로 `comfy` CLI를 직접 실행하는 방식 — 폰이 쓰는
+> `api_server`엔 `terminal`/`code_execution` 툴셋이 아예 없어서 이건 지금도 못 쓴다,
+> §1.6 참고) 얘기였다. 그 문제를 풀려고 바로 이 리포에 **`mcp-comfyui-bridge`를
+> 직접 만들었다** — 터미널이 아니라 REST API(`127.0.0.1:8188`)로 ComfyUI를 호출하는
+> 좁은 MCP 서버라 `api_server`에서도 문제없이 동작한다(설계: `docs/superpowers/specs/
+> 2026-08-29-comfyui-mcp-bridge-design.md`). 그리고 이게 지금 실제로 쓰이고 있는
+> 경로다 — FAL은 유료라 지금 안 쓴다. 아래 §3을 comfyui-bridge 기준으로 정정했다.
+> ("~2026-08-29 실측"과 같은 날짜에 "ComfyUI는 못 쓴다"와 "그래서 comfyui-bridge를
+> 만들었다"가 둘 다 있었던 셈 — 앞 문장만 남고 뒤 문장(해결책)이 이 문서에 안 반영돼서
+> 한동안 서로 모순된 채로 있었다.)
 
 ## 사전 준비물 (새 PC)
 
@@ -33,7 +40,8 @@
 - Python 3.10+ (설치 스크립트가 3.11도 별도로 깔지만, `upload-server`/ComfyUI 설치용 CLI
   도구는 PATH의 `python`을 씀)
 - LLM 프로바이더 API 키 하나(Anthropic/OpenRouter/커스텀 브릿지 등 — 아래 §1.2)
-- (이미지 생성 쓰려면) FAL API 키(https://fal.ai) — GPU 불필요, 아래 §3 참고
+- (이미지 생성 쓰려면) ComfyUI + SD1.5 체크포인트 + GPU, 아래 §3 참고. GPU가 없는
+  환경이면 §3 끝의 "GPU 없을 때" 대안(FAL 등 유료 API)을 대신 본다.
 
 ---
 
@@ -114,21 +122,31 @@ Cloud Console에서 `client_secret`은 생성 시점에만 받을 수 있다** �
 ### 1.6 폰 채널(`api_server`)용 툴셋 활성화
 
 기본으로 `api_server` 플랫폼엔 `file`/`memory`/`skills`/`todo`/`web`만 켜져있다. 이
-리포의 첨부/이미지 기능을 쓰려면 명시적으로 더 켜야 한다:
+리포의 첨부 기능을 쓰려면 명시적으로 더 켜야 한다:
 
 ```powershell
 hermes tools enable vision --platform api_server
+```
+
+(`hermes tools list`로 현재 상태 확인 가능. 이걸 빼먹으면 폰에서 이미지를 첨부해도
+에이전트가 못 "본다" — 2026-08-29 실측.)
+
+**`image_gen` 툴셋은 comfyui-bridge를 쓸 거면 필요 없다** — MCP 서버(comfyui-bridge
+포함)는 `config.yaml`의 `mcp_servers:` 등록만으로 잡힌다, 이 `hermes tools enable`
+화이트리스트를 안 탄다(calendar와 같은 패턴, §1.5 참고). `image_gen` 툴셋은 §3 끝의
+"GPU 없을 때" 유료 API 대안(fal 등 **Hermes 내장** provider)을 쓸 때만 필요하다:
+
+```powershell
 hermes tools enable image_gen --platform api_server
 ```
 
-(`hermes tools list`로 현재 상태 확인 가능. 이 두 줄을 빼먹으면 폰에서 이미지를 첨부해도
-에이전트가 못 "보고", "그림 그려줘"도 텍스트 아트로 대체된다 — 2026-08-29 실측.)
+그것도 켜는 것만으론 부족하다 — "카테고리"만 켤 뿐, 실제로 어느 프로바이더로 그릴지
+(`image_gen.provider`)는 따로 정해야 도구가 잡힌다(§3 끝부분에서 설정).
 
-**`image_gen` 툴셋을 켜는 것만으론 부족하다** — 그건 "카테고리"만 켤 뿐, 실제로 어느
-프로바이더로 그릴지(`image_gen.provider`)는 따로 정해야 실제 내장 이미지 생성 도구가
-잡힌다(안 정하면 에이전트가 그 도구 자체를 못 찾는다 — §3에서 이어서 설정).
-`api_server` 플랫폼엔 `terminal`/`code_execution`이 없어서 ComfyUI 같은 CLI 실행형
-경로는 아예 못 쓴다 — 그래서 §3의 API 호출형 provider가 폰에서 유일하게 동작하는 방식이다.
+`api_server` 플랫폼엔 `terminal`/`code_execution`이 없어서 `comfy` CLI를 직접 부르는
+경로(Hermes 내장 `comfyui` 스킬)는 못 쓴다 — 그래서 REST API로 ComfyUI를 부르는
+`mcp-comfyui-bridge`(§3)를 따로 만들었다. GPU 자체가 없는 환경이면 §3 끝의 API
+호출형 provider(fal 등, 유료)가 대안이다.
 
 ### 1.7 방화벽 (LAN 전용, 최초 1회)
 
@@ -230,13 +248,53 @@ python -m pip install -e ".[dev]"
 
 ---
 
-## 3. 이미지 생성 설정 (`image_gen` provider — FAL)
+## 3. 이미지 생성 설정 (`mcp-comfyui-bridge` + 로컬 ComfyUI)
 
 이미지 생성 안 쓸 거면 이 섹션 전체를 건너뛴다 — 나머지 기능(채팅, 캘린더, 파일 첨부,
 vision)은 전부 그대로 정상 작동한다.
 
-별도 설치·GPU·모델 다운로드 전혀 필요 없다 — 호스팅된 API를 호출하는 내장 도구를
-켜는 것뿐이다:
+**GPU가 있는 환경일 것.** 로컬 ComfyUI로 무료로 그리는 대신, GPU 있는 PC에서만 된다.
+
+### 3.1 ComfyUI 자체 설치·기동 (이 리포 밖)
+
+```powershell
+comfy launch --background
+curl.exe http://127.0.0.1:8188/system_stats   # 확인 — 응답 오면 정상
+```
+
+SD1.5 체크포인트(`v1-5-pruned-emaonly.safetensors`)가 이미 받아져 있어야 한다. 상세
+설치 절차는 이 문서 범위 밖(ComfyUI 공식 문서 참고) — 여기선 "이미 켜져있다"는 전제로
+이어간다. **에이전트가 대신 켜주지 않는다** — 폰이 쓰는 `api_server`엔 터미널 도구가
+없어서 `comfy launch`를 자기가 실행할 방법이 없다(§1.6과 같은 이유). 매번 이 PC를
+새로 켤 때 사람이 먼저 띄워둬야 한다.
+
+### 3.2 `mcp-comfyui-bridge` 설치
+
+```powershell
+cd mcp-comfyui-bridge
+python -m pip install -e ".[dev]"
+```
+
+`hermes-config/config.yaml.example`의 `mcp_servers.comfyui-bridge` 블록을
+`%LOCALAPPDATA%\hermes\config.yaml`에 병합한 뒤:
+
+```powershell
+hermes gateway restart
+hermes mcp list   # comfyui-bridge가 뜨는지 확인
+```
+
+환경변수(전부 선택, 기본값 있음)와 자세한 동작은
+[`mcp-comfyui-bridge/README.md`](../mcp-comfyui-bridge/README.md) 참고. 출력 위치는
+기본 `upload-server/generated/comfyui/` — `upload-server`(§2)가 폰에 서빙하는 위치라
+`UPLOAD_SERVER_GENERATED_DIR`와 짝이 맞아야 한다.
+
+**검증**: 폰에서 "그림 그려줘" → `upload-server/generated/comfyui/`에 실제 PNG가
+생기고, 채팅 버블에 렌더링되는지 확인.
+
+### GPU 없을 때 — 유료 API 대안
+
+로컬 GPU가 없는 환경이면 `image_gen.provider`(fal/openai/xai/krea/nous 중 선택,
+전부 유료)로 대신할 수 있다:
 
 ```powershell
 hermes config set FAL_KEY "<fal.ai에서 발급받은 키>"
@@ -247,11 +305,13 @@ hermes gateway restart
 `hermes config set image_gen.provider fal` 실행 시 "not a recognized config key"
 경고가 뜰 수 있는데, 무시해도 된다 — CLI의 키 화이트리스트가 이 값을 모를 뿐 실제로는
 `config.yaml`에 정확히 `image_gen: {provider: fal}`로 저장되고(소스 코드로 확인,
-`hermes_cli/tools_config.py`), 게이트웨이는 이 값을 정상적으로 읽는다.
+`hermes_cli/tools_config.py`), 게이트웨이는 이 값을 정상적으로 읽는다. 각 프로바이더에
+필요한 키는 [`hermes-credentials.md` §4](./hermes-credentials.md) 참고.
 
-`image_gen.provider`로 고를 수 있는 값은 fal/openai/xai/krea/nous — 각각 필요한 키는
-[`hermes-credentials.md` §4](./hermes-credentials.md)에 정리돼있다. FAL을 기본으로
-추천하는 이유도 거기 있다.
+comfyui-bridge와 `image_gen` provider 둘 다 등록해두면, 모델이 상황에 따라 어느 쪽을
+고를지는 보장이 없다 — 지금은 **comfyui-bridge만 쓰고 `image_gen.provider`는 안
+정한 상태**(FAL은 유료라 실제로 쓴 적 없음). 둘 다 켜고 싶으면 그 조합이 실제로
+의도대로 동작하는지 별도 확인이 필요하다(아직 실측 안 함).
 
 **설정 반영에 `hermes gateway restart`가 필요하다** — `config.yaml`/env 파일을 고친
 뒤 게이트웨이가 이미 떠 있으면 새 값을 안 읽는다(실측 확인).
@@ -290,8 +350,12 @@ curl.exe -H "Authorization: Bearer $env:API_SERVER_KEY" http://<HOST>:8642/healt
 # 2. 업로드 서버
 curl.exe -X POST http://<HOST>:8643/upload -H "Authorization: Bearer $env:API_SERVER_KEY" -F "file=@아무파일"
 
-# 3. 이미지 생성 (설정했다면) — image_gen.provider가 잡히는지, 도구 검색으로 확인
+# 3. 이미지 생성 (설정했다면)
+#    comfyui-bridge 쓰는 경우: ComfyUI가 떠있는지 먼저 확인
+curl.exe http://127.0.0.1:8188/system_stats
 #    ("고양이 그림 그려줘" 같은 실제 /v1/runs 요청으로 진짜 파일이 생기는지 확인하는 게 제일 확실함)
+hermes mcp list   # comfyui-bridge가 목록에 있는지
+#    GPU 없어서 image_gen provider(fal 등)로 대신하는 경우:
 hermes config get image_gen.provider
 
 # 4. 텍스트 왕복 (/v1/runs)
