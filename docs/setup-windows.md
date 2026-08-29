@@ -36,23 +36,33 @@ iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 
 ## 2. LLM 프로바이더 + 웹검색 + 이미지 생성
 
-> **정정**: 원안은 Anthropic 또는 OpenRouter 직결이었지만, **확정안은 Timely AI의 OpenAI 호환
-> 브릿지**다 (`windows-migration.md` §3.1, `timely_ai_api.md`). 마법사 대신 아래로 처리한다:
+> **정정**: 원안은 대화형 마법사였지만, 실제로는 마법사 대신 `hermes config set`으로
+> 직접 처리하는 게 안정적이다(TTY 없는 환경/스크립트에서도 동일하게 재현 가능).
+> 어떤 LLM 키를 쓸지는 환경마다 다르다 — 아래 두 경로 중 그 환경에서 실제로 쓸 키에 맞는
+> 쪽을 고른다. 특정 프로바이더에 묶인 요구사항이 아니다.
+
+**표준 경로 (Anthropic 직결 / OpenRouter)**: [`hermes-credentials.md` §1](./hermes-credentials.md) 참고.
+
+**커스텀 OpenAI 호환 브릿지**(사내/서드파티 게이트웨이 등 — 이 리포는 지금까지 Timely AI를
+써왔지만, 다른 환경에서는 다른 브릿지/키를 쓸 수 있다. 아래는 그 형태의 공통 골격이고,
+Timely 고유의 값(base_url, 키 형식 등)은 [`timely_ai_api.md`](./timely_ai_api.md)에 분리해뒀다):
 
 ```powershell
 hermes config set model.provider custom
-hermes config set model.base_url https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai
-hermes config set model.default "anthropic/claude-haiku-4.5"
-hermes config set model.api_key <Timely 키>
+hermes config set model.base_url <그 브릿지의 OpenAI 호환 엔드포인트>
+hermes config set model.default <그 브릿지에서 실제로 쓸 모델 ID>   # 그 프로바이더의 /v1/models로 먼저 확인할 것
+hermes config set model.api_key <그 브릿지의 키>
 hermes config set agent.max_turns 20      # 기본 500 -- 크레딧 소모 방어
 ```
 
-- **`OPENAI_API_KEY` 환경변수는 읽히지 않는다** (실측 v0.20.6). `model.api_key`여야 한다.
-- 실제 발급 키 형식은 **`tgpt_sk_...`(72자)** 였다 (문서 일부의 `sdk_live_...`는 옛 표기).
-- 이 키는 `config.yaml`에 **평문 저장**된다. 파일 ACL을 사용자 전용으로 잠글 것:
+- **`OPENAI_API_KEY` 환경변수는 읽히지 않는다** (실측 v0.20.6, 커스텀 브릿지 공통). `model.api_key`여야 한다.
+- 이 키는 `config.yaml`에 **평문 저장**된다(어느 브릿지를 쓰든 공통) — 파일 ACL을 사용자
+  전용으로 잠글 것:
   ```powershell
   icacls "$env:LOCALAPPDATA\hermes\config.yaml" /inheritance:r /grant:r "$($env:USERNAME):F"
   ```
+- Timely AI를 그대로 쓸 경우의 정확한 `base_url`·키 형식(`tgpt_sk_...`)·트러블슈팅은
+  [`timely_ai_api.md`](./timely_ai_api.md) 참고.
 
 웹 검색 백엔드(Firecrawl/Tavily/Brave 등)와 이미지 생성 키가 필요하면 `hermes setup` 또는
 `hermes config set`으로 추가 — Hermes 내장 기능이라 별도 MCP는 필요 없다 (PLAN.md 참고).
