@@ -346,9 +346,11 @@ private fun FullscreenImageViewer(media: ChatMedia, onDismiss: () -> Unit) {
 }
 
 /**
- * `FileChip` 탭 시 뜨는 텍스트 원문 미리보기 — 마크다운 서식 렌더링은 범위 밖(YAGNI),
- * UTF-8로 디코드한 원문 그대로 스크롤 가능하게 보여준다. [media.status]는 호출부
- * ([ChatMessageList])가 Loaded일 때만 이 컴포저블을 띄우므로 항상 [MediaStatus.Loaded]다.
+ * `FileChip` 탭 시 뜨는 미리보기. `text/html`(architecture-diagram 등 다이어그램
+ * 스킬 산출물)은 클로드 Artifacts처럼 소스코드가 아니라 [WebView]로 실제 렌더링해서
+ * 보여준다 — 그 외 텍스트(md/txt 등)는 마크다운 서식 렌더링 없이(YAGNI) UTF-8 원문
+ * 그대로 스크롤 가능하게 보여준다. [media.status]는 호출부([ChatMessageList])가
+ * Loaded일 때만 이 컴포저블을 띄우므로 항상 [MediaStatus.Loaded]다.
  */
 @Composable
 private fun TextPreviewDialog(media: ChatMedia, onDismiss: () -> Unit) {
@@ -392,15 +394,30 @@ private fun TextPreviewDialog(media: ChatMedia, onDismiss: () -> Unit) {
                     }
                 }) { Text("📤") }
             }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(androidx.compose.foundation.rememberScrollState())
-                    .padding(12.dp),
-            )
+            if (isRenderableHtml(mimeType)) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            // 다이어그램 산출물은 인라인 CSS/JS로 자체완결형이라 스크립트가
+                            // 필요할 수 있다(호버 효과 등) — 로컬에서 만든 신뢰 콘텐츠라
+                            // XSS 우려 없음(우리 자신의 생성 파이프라인 산출물).
+                            settings.javaScriptEnabled = true
+                        }
+                    },
+                    update = { webView -> webView.loadDataWithBaseURL(null, text, "text/html", "utf-8", null) },
+                )
+            } else {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                        .padding(12.dp),
+                )
+            }
         }
     }
 }

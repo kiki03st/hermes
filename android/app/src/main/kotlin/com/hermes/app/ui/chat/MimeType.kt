@@ -14,6 +14,12 @@ fun guessMimeType(filename: String): String {
 fun isPreviewableText(mimeType: String): Boolean =
     mimeType.startsWith("text/") || mimeType == "application/json"
 
+/** [isPreviewableText] 중에서도 [mimeType]이 실제로 브라우저 렌더링해서 보여줄
+ * 대상인지 — 다이어그램 스킬(architecture-diagram 등) 산출물이 여기 해당한다.
+ * 클로드 Artifacts처럼 소스코드가 아니라 완성된 그림으로 보여주기 위함
+ * (설계 문서: 2026-08-30, TextPreviewDialog의 WebView 분기). */
+fun isRenderableHtml(mimeType: String): Boolean = mimeType == "text/html"
+
 private val _MIME_BY_EXTENSION = mapOf(
     "md" to "text/markdown",
     "txt" to "text/plain",

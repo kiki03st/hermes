@@ -48,4 +48,12 @@ class MimeTypeTest {
         assertFalse(isPreviewableText("application/octet-stream"))
         assertFalse(isPreviewableText("image/png"))
     }
+
+    @Test
+    fun `isRenderableHtml accepts only text_html`() {
+        assertTrue(isRenderableHtml("text/html"))
+        assertFalse(isRenderableHtml("text/markdown"))
+        assertFalse(isRenderableHtml("text/plain"))
+        assertFalse(isRenderableHtml("application/json"))
+    }
 }
