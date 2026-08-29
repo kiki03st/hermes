@@ -286,6 +286,18 @@ private fun DiagramThumbnail(media: ChatMedia, html: String, bytes: ByteArray, o
                     factory = { ctx ->
                         WebView(ctx).apply {
                             settings.javaScriptEnabled = true
+                            // 캡처 성공의 핵심 — 실측 버그(2026-08-30): 다이어그램은
+                            // 정상 생성/렌더링됐는데 버블엔 완전한 흰 화면만 떴다. 앱
+                            // 매니페스트에 hardwareAccelerated="false"가 없어 WebView는
+                            // 기본값(하드웨어 가속)으로 그려지는데, 하드웨어 가속
+                            // WebView에 View.draw(Canvas)를 그대로 부르면 크로미움이
+                            // GPU로 컴포지트한 실제 픽셀이 아니라 빈 비트맵만 나온다
+                            // (잘 알려진 안드로이드 WebView 캡처 함정). 페이지 로드
+                            // *전에* 소프트웨어 레이어로 강제해야 그 이후 모든 렌더링이
+                            // 소프트웨어로 그려져서 draw(Canvas)가 실제로 픽셀을 담는다
+                            // — captureWebViewBitmap 시점에 바꾸면 이미 하드웨어로
+                            // 그려진 걸 되돌릴 수 없어서 늦다.
+                            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
                             if (isAsync) {
                                 addJavascriptInterface(
                                     RenderCompleteBridge {
