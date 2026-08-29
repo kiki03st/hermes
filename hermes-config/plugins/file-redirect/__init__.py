@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 
 # upload-server가 폰에 서빙하는 위치 — 리포마다/기기마다 클론 경로가 다를 수 있어
@@ -81,6 +82,28 @@ def _sanitize_filename(name: str) -> str:
     return _UNSAFE_CHARS.sub("_", base)[:200]
 
 
+def _unique_destination(base_dir: Path, filename: str) -> Path:
+    """[filename]이 [base_dir]에 이미 있으면 안 겹치는 이름으로 바꿔서 돌려준다.
+
+    실측 버그(2026-08-30): architecture-diagram/excalidraw 둘 다 모델이 매번 거의
+    똑같은 기본 파일명을 쓴다(예: "sample-architecture.html") — 서로 다른 세션이
+    (동시든 몇 분 뒤든) 같은 파일명으로 저장하면 write_file 자체의 충돌 감지가
+    "다른 세션이 이 파일을 방금 건드렸다"는 `_warning`을 끼워넣고, 모델이 그걸 보고
+    당황해서 `patch`로 자기 파일을 "고치려" 시도했다가 실패하고 재시도하는 불필요한
+    도구 호출 2번이 매 턴 채팅에 그대로 노출됐다(사용자 리포트: "이상한 경고 문구가
+    많이 보임"). 애초에 겹쳐 쓰지 않으면 그 경고 자체가 안 뜬다."""
+    candidate = base_dir / filename
+    if not candidate.exists():
+        return candidate
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    for i in range(1, 1000):
+        alt = base_dir / f"{stem}_{i}{suffix}"
+        if not alt.exists():
+            return alt
+    return base_dir / f"{stem}_{int(time.time())}{suffix}"
+
+
 def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, session_id: str = "", **kwargs):
     """pre_tool_call — write_file이 홈 디렉터리 트리 밑 어디든(바로 밑이든,
     .hermes/든, 스킬이 만든 서브폴더든) 문서를 쓰려 하면 경로를
@@ -107,7 +130,7 @@ def redirect_home_dir_writes(tool_name: str = "", args: dict | None = None, sess
     # 확장자는 안 본다 — 위 docstring 참고(두더지잡기였다).
 
     _GENERATED_FILES_DIR.mkdir(parents=True, exist_ok=True)
-    new_path = _GENERATED_FILES_DIR / _sanitize_filename(abs_target.name)
+    new_path = _unique_destination(_GENERATED_FILES_DIR, _sanitize_filename(abs_target.name))
     if session_id:
         # 모델이 원래 넘긴 그대로(raw_path — 상대경로일 수도 있음)와, 그걸 절대경로로
         # 풀어낸 형태(abs_target) 둘 다 후보로 남긴다 — 응답 프로즈에서 모델이 둘 중
