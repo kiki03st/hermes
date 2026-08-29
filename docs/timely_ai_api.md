@@ -19,7 +19,7 @@ Timely에는 **두 개의 API 경로**가 있고, Hermes에 붙는 건 두 번�
 ```bash
 hermes config set model.provider custom
 hermes config set model.base_url https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai
-hermes config set model.default "anthropic/claude-haiku-4.5"
+hermes config set model.default "anthropic/claude-sonnet-5"   # §4 참고 — haiku는 도구 선택이 불안정했다(실측)
 hermes config set model.api_key tgpt_sk_...      # 실측 형식 (72자)
 ```
 
@@ -138,7 +138,7 @@ source ~/.bashrc         # 또는 ~/.zshrc
 | 모델 프로바이더 | **커스텀 OpenAI 호환 엔드포인트** (Nous Portal / OpenRouter 아님) |
 | Base URL | `https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai` |
 | API Key | Timely 키 (**실제 형식 `tgpt_sk_...`, 72자** — 실측 2026-08-28. 문서 원안의 `sdk_live_...`는 옛 표기) |
-| 모델명 | `anthropic/claude-haiku-4.5` |
+| 모델명 | `anthropic/claude-sonnet-5` (§4 참고 — haiku는 도구 선택이 불안정했다, 실측) |
 | 컨텍스트 길이 | 자동 감지 |
 | 최대 반복 횟수 | **15~20** (기본 60에서 낮출 것 — §5 참고) |
 | 컨텍스트 압축 임계값 | 0.85 (기본값 유지) |
@@ -148,7 +148,7 @@ source ~/.bashrc         # 또는 ~/.zshrc
 ```bash
 hermes config set model.provider custom
 hermes config set model.base_url https://hello.timelygpt.co.kr/api/v2/chat/bridge/openai
-hermes config set model.default "anthropic/claude-haiku-4.5"
+hermes config set model.default "anthropic/claude-sonnet-5"   # §4 참고 — haiku는 도구 선택이 불안정했다(실측)
 hermes config set model.api_key sdk_live_...
 ```
 
@@ -176,12 +176,24 @@ hermes config set model.api_key sdk_live_...
 
 브릿지에서 사용 가능한 모델 중 에이전트 용도로 유효한 것들:
 
+> **2026-08-30 정정 — 아래 표의 "기본" 추천을 뒤집는다.** 이 문서 작성 당시(2026-08-27)
+> Haiku를 기본으로 추천했는데, 실제 폰 채널(`api_server`)에서 며칠간 운영해본 결과 스킬/도구
+> 선택이 부정확해지는 문제가 반복 실측됐다 — 존재하지 않는 `terminal` 도구를 매번
+> `tool_search`로 찾아 헤매거나(스킬 문서가 잘못 안내한 탓도 있었지만, Sonnet은 같은
+> 잘못된 안내를 받고도 한두 번 만에 포기하고 넘어간 반면 Haiku는 매번 반복), MEDIA 태그
+> 삽입 같은 명시적 지시를 놓치는 등. `model.default`를 `anthropic/claude-sonnet-5`로
+> 바꾸자 확연히 안정적이었다. 비용/속도 우선인 별개 워크로드가 아니라면 Haiku를 기본으로
+> 잡지 말 것 — 아래 표는 그 정정을 반영했다.
+
 | 용도 | 모델 | 비고 |
 |---|---|---|
-| **기본 (일상 작업)** | `anthropic/claude-haiku-4.5` | 빠르고 저렴, 툴 콜링 안정적 |
-| 어려운 분석·코드 | `anthropic/claude-opus-4.7` | 비용 높음. 필요할 때만 전환 |
+| **기본 (일상 작업)** | `anthropic/claude-sonnet-5` | 스킬/도구 선택 안정적(실측, 2026-08-30) |
+| 어려운 분석·코드 | `anthropic/claude-opus-5` | 비용 높음. 필요할 때만 전환 |
 | 비전 (이미지 입력) | `google/gemini-3-flash-preview` | `image_url` 표준 형식 지원 |
-| 대안 | `x-ai/grok-4.1-fast` | 툴 콜링 미검증 |
+| 비용/속도 우선(도구 선택 부정확 감수) | `anthropic/claude-haiku-4.5` | 툴 콜링 자체는 되지만 스킬/도구 **선택**이 부정확해지는 경우가 실측 확인됨 — 에이전트 백본 기본값으로는 비추천 |
+
+(모델 슬러그는 이 브릿지의 `/v1/models`로 그때그때 확인할 것 — 프로바이더 목록은 시간이
+지나면 바뀐다. 위 `-5` 계열도 2026-08-30 시점 확인값이다.)
 
 ### ⚠️ `openai/*` 계열은 처음에 피하세요
 
