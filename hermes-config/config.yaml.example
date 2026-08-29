@@ -170,6 +170,15 @@ mcp_servers:
     tools:
       exclude: ["manage-accounts"]  # 폰/워치 흐름에서 계정 관리는 불필요
 
+  # --- 이미지 생성 (comfyui-bridge, 이 리포 신규 구현) ---
+  # 로컬 ComfyUI의 REST API(127.0.0.1:8188)를 대신 호출하는 좁은 MCP 서버 —
+  # generate_image 함수 하나만 노출한다. platform_toolsets 등록 불필요(MCP 서버는
+  # 그걸로 안 걸림, calendar와 동일). ComfyUI 자체는 별도로 미리 켜둬야 한다:
+  # comfy launch --background (docs/backend-new-machine-setup.md §3 참고).
+  comfyui-bridge:
+    command: "comfyui-bridge"
+    trust: full
+
 # API 서버 설정은 .env 우선이지만 config.yaml에도 둘 수 있다 (env가 항상 이긴다).
 # env.example 을 이미 채웠다면 이 블록은 생략해도 된다.
 # gateway:

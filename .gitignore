@@ -32,5 +32,8 @@ hermes-config/.env
 # upload-server 런타임 산출물 — 실제 사용자가 올린 파일이 쌓이는 곳, 소스 아님
 upload-server/uploads/
 
+# comfyui-bridge 런타임 산출물 — 생성된 이미지 파일, 소스 아님
+mcp-comfyui-bridge/generated/
+
 # OS
 .DS_Store
