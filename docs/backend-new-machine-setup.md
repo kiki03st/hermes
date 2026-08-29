@@ -163,6 +163,7 @@ python -m pip install -e ".[dev]"
 | `UPLOAD_SERVER_API_KEY` | §1.3의 `API_SERVER_KEY`와 **동일한 값** |
 | `UPLOAD_SERVER_HOST` | §1.3과 같은 LAN IP |
 | `UPLOAD_SERVER_INBOX_DIR` | **절대경로**로 지정할 것(예: `C:\hermes\upload-server\uploads\inbox`) — 상대경로를 주면 게이트웨이 프로세스가 다른 cwd에서 그 경로를 찾다가 실패한다(2026-08-29 실측 버그, 코드 자체는 이제 항상 절대경로로 정규화하지만 습관적으로 절대경로를 주는 게 안전) |
+| `UPLOAD_SERVER_GENERATED_DIR` | 선택, 기본값 `./generated`로 충분. `comfyui-bridge` 등 생성기가 여기 밑 `<tool>/`에 저장한 파일을 폰 앱이 `GET /generated/{tool}/{filename}`로 받아와 채팅 버블에 렌더링한다(설계 문서: `docs/superpowers/specs/2026-08-29-image-viewer-design.md`) |
 
 방화벽은 §1.7과 완전히 동일한 패턴, 포트만 `8643`(같은 Public Block 룰 함정도 동일).
 
