@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -193,32 +192,23 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit, onFi
                 runCatching { BitmapFactory.decodeByteArray(status.bytes, 0, status.bytes.size)?.asImageBitmap() }
                     .getOrNull()
             }
-            val webHtml = remember(media.id) {
-                if (bitmap == null) {
-                    runCatching { status.bytes.toString(Charsets.UTF_8) }.getOrNull()
-                        ?.let { resolveWebViewHtml(media.filename, guessMimeType(media.filename), it) }
-                } else {
-                    null
-                }
-            }
-            when {
-                bitmap != null -> Image(
+            if (bitmap != null) {
+                Image(
                     bitmap = bitmap,
                     contentDescription = media.filename,
                     modifier = Modifier.widthIn(max = 280.dp).clickable { onImageClick(media) },
                 )
-                webHtml != null ->
-                    // HTML 다이어그램/excalidraw — 탭해야만 보이는 칩이 아니라 이미지처럼
-                    // 버블에 바로 렌더링한다(사용자 요청, 2026-08-30: "클로드에서는 클릭할
-                    // 필요 없이 이미지처럼 바로 보이잖아"). 탭하면 전체화면으로 확대.
-                    InlineWebView(html = webHtml, contentDescription = media.filename, onClick = { onFileClick(media) })
-                else ->
-                    // 비트맵 디코드도 안 되고 렌더링 대상도 아닌 일반 파일(마크다운, PDF 등)
-                    // — 다운로드 자체는 이미 성공해서 바이트가 메모리에 있다(실측 확인,
-                    // 2026-08-29: 예전엔 여기서 "이미지를 표시할 수 없습니다"만 띄우고
-                    // 바이트를 그냥 버렸다). 일반 파일 칩으로 대신 그려서 저장/공유는
-                    // 계속 가능하게 한다.
-                    FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
+            } else {
+                // 비트맵 디코드 실패 = 이미지가 아닌 파일(마크다운, HTML 다이어그램, excalidraw,
+                // PDF 등) — 다운로드 자체는 이미 성공해서 바이트가 메모리에 있다(실측 확인,
+                // 2026-08-29: 예전엔 여기서 "이미지를 표시할 수 없습니다"만 띄우고 바이트를
+                // 그냥 버렸다). 일반 파일 칩으로 대신 그려서 저장/공유는 계속 가능하게 한다.
+                //
+                // HTML/excalidraw를 버블에 바로 인라인 WebView로 렌더링해봤는데(2026-08-30)
+                // 콘솔 로그 접근이 없는 상태로 세 번 고쳐도 매번 다른 증상(흰 화면→까만
+                // 박스→흰 화면)으로 계속 깨져서 롤백했다 — 탭하면 여는 전체화면
+                // TextPreviewDialog(WebView)는 그대로 잘 동작하니 거기서만 렌더링한다.
+                FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
             }
         }
 
@@ -275,28 +265,6 @@ private fun FileChip(media: ChatMedia, bytes: ByteArray, onClick: (ChatMedia) ->
             Text("📤")
         }
     }
-}
-
-/** 버블 안에 바로 렌더링되는 작은 WebView — 이미지와 같은 자리, 탭하면 [onClick]으로
- * 전체화면을 연다. [html]은 [resolveWebViewHtml]이 만든, 그대로 로드하면 되는 완성된
- * 페이지다. 매 리컴포지션마다 새 WebView를 만들지 않도록 `factory`에서만 생성한다. */
-@Composable
-private fun InlineWebView(html: String, contentDescription: String, onClick: () -> Unit) {
-    androidx.compose.ui.viewinterop.AndroidView(
-        modifier = Modifier
-            .widthIn(max = 280.dp)
-            .height(220.dp)
-            .clickable(onClick = onClick),
-        factory = { ctx ->
-            android.webkit.WebView(ctx).apply {
-                settings.javaScriptEnabled = true
-                // 버블 안 미리보기는 스크롤/줌 조작 없이 그냥 보여주기만 하면 된다 —
-                // 리스트 스크롤과 웹뷰 내부 스크롤이 충돌하지 않게.
-                setOnTouchListener { _, _ -> true }
-            }
-        },
-        update = { webView -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null) },
-    )
 }
 
 /**

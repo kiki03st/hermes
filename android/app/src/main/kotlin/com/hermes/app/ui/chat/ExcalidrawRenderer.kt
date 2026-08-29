@@ -83,10 +83,13 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
 
 /** [filename]/[mimeType]가 WebView로 렌더링할 대상이면(실제로 그려지는 시각 콘텐츠 —
  * architecture-diagram의 완성된 HTML, excalidraw의 scene JSON) 로드할 HTML을 만들어
- * 돌려준다. 그 외(md/txt/csv/pdf 등 순수 문서)는 null — 호출부가 `FileChip`으로
- * 떨어뜨린다. `MediaImage`(버블 인라인)와 `TextPreviewDialog`(전체화면) 둘 다 이걸
- * 공유해서 판단 로직이 갈라지지 않게 한다(설계 문서: 2026-08-30, "탭해야만 보이는 게
- * 아니라 이미지처럼 바로 보이면 좋겠다"는 요청 반영). */
+ * 돌려준다. 그 외(md/txt/csv/pdf 등 순수 문서)는 null — 호출부가 `FileChip`으로 떨어뜨린다.
+ * `TextPreviewDialog`(전체화면 탭 미리보기)가 쓴다.
+ *
+ * 원래는 채팅 버블에 바로 인라인 렌더링하는 것도 시도했다(2026-08-30, 클로드 Artifacts처럼
+ * 탭 없이 바로 보이길 원해서) — 근데 콘솔 로그 접근 없이 세 번 고쳐도 매번 다른 증상
+ * (흰 화면 → 까만 박스 → 흰 화면)으로 계속 깨져서 롤백했다. 전체화면 탭 미리보기는
+ * 안정적으로 작동해서 그대로 둔다. */
 fun resolveWebViewHtml(filename: String, mimeType: String, rawText: String): String? = when {
     isExcalidrawFile(filename) -> buildExcalidrawViewerHtml(rawText)
     isRenderableHtml(mimeType) -> rawText
