@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -192,18 +193,32 @@ private fun MediaImage(media: ChatMedia, onImageClick: (ChatMedia) -> Unit, onFi
                 runCatching { BitmapFactory.decodeByteArray(status.bytes, 0, status.bytes.size)?.asImageBitmap() }
                     .getOrNull()
             }
-            if (bitmap != null) {
-                Image(
+            val webHtml = remember(media.id) {
+                if (bitmap == null) {
+                    runCatching { status.bytes.toString(Charsets.UTF_8) }.getOrNull()
+                        ?.let { resolveWebViewHtml(media.filename, guessMimeType(media.filename), it) }
+                } else {
+                    null
+                }
+            }
+            when {
+                bitmap != null -> Image(
                     bitmap = bitmap,
                     contentDescription = media.filename,
                     modifier = Modifier.widthIn(max = 280.dp).clickable { onImageClick(media) },
                 )
-            } else {
-                // 비트맵 디코드 실패 = 이미지가 아닌 파일(마크다운, PDF 등) — 다운로드 자체는
-                // 이미 성공해서 바이트가 메모리에 있다(실측 확인, 2026-08-29: 예전엔 여기서
-                // "이미지를 표시할 수 없습니다"만 띄우고 바이트를 그냥 버렸다). 일반 파일
-                // 칩으로 대신 그려서 저장/공유는 계속 가능하게 한다.
-                FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
+                webHtml != null ->
+                    // HTML 다이어그램/excalidraw — 탭해야만 보이는 칩이 아니라 이미지처럼
+                    // 버블에 바로 렌더링한다(사용자 요청, 2026-08-30: "클로드에서는 클릭할
+                    // 필요 없이 이미지처럼 바로 보이잖아"). 탭하면 전체화면으로 확대.
+                    InlineWebView(html = webHtml, contentDescription = media.filename, onClick = { onFileClick(media) })
+                else ->
+                    // 비트맵 디코드도 안 되고 렌더링 대상도 아닌 일반 파일(마크다운, PDF 등)
+                    // — 다운로드 자체는 이미 성공해서 바이트가 메모리에 있다(실측 확인,
+                    // 2026-08-29: 예전엔 여기서 "이미지를 표시할 수 없습니다"만 띄우고
+                    // 바이트를 그냥 버렸다). 일반 파일 칩으로 대신 그려서 저장/공유는
+                    // 계속 가능하게 한다.
+                    FileChip(media = media, bytes = status.bytes, onClick = onFileClick)
             }
         }
 
@@ -260,6 +275,28 @@ private fun FileChip(media: ChatMedia, bytes: ByteArray, onClick: (ChatMedia) ->
             Text("📤")
         }
     }
+}
+
+/** 버블 안에 바로 렌더링되는 작은 WebView — 이미지와 같은 자리, 탭하면 [onClick]으로
+ * 전체화면을 연다. [html]은 [resolveWebViewHtml]이 만든, 그대로 로드하면 되는 완성된
+ * 페이지다. 매 리컴포지션마다 새 WebView를 만들지 않도록 `factory`에서만 생성한다. */
+@Composable
+private fun InlineWebView(html: String, contentDescription: String, onClick: () -> Unit) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            .height(220.dp)
+            .clickable(onClick = onClick),
+        factory = { ctx ->
+            android.webkit.WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                // 버블 안 미리보기는 스크롤/줌 조작 없이 그냥 보여주기만 하면 된다 —
+                // 리스트 스크롤과 웹뷰 내부 스크롤이 충돌하지 않게.
+                setOnTouchListener { _, _ -> true }
+            }
+        },
+        update = { webView -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null) },
+    )
 }
 
 /**
@@ -394,14 +431,11 @@ private fun TextPreviewDialog(media: ChatMedia, onDismiss: () -> Unit) {
                     }
                 }) { Text("📤") }
             }
-            val isExcalidraw = remember(media.filename) { isExcalidrawFile(media.filename) }
-            if (isRenderableHtml(mimeType) || isExcalidraw) {
-                // excalidraw는 원문이 렌더링 가능한 HTML이 아니라 scene JSON이라(같은
-                // .excalidraw 파일이 architecture-diagram의 완성된 HTML과 다름), WebView에
-                // 넘기기 전에 exportToSvg를 호출하는 뷰어 페이지로 감싼다
-                // (ExcalidrawRenderer.kt — CDN에서 @excalidraw/utils를 ES 모듈로 불러온다,
-                // 실기기 미검증 리스크 있음, 설계 문서: 2026-08-30).
-                val htmlToLoad = remember(media.id) { if (isExcalidraw) buildExcalidrawViewerHtml(text) else text }
+            // MediaImage(버블 인라인)와 판단 로직을 공유한다(resolveWebViewHtml) — excalidraw는
+            // 원문이 렌더링 가능한 HTML이 아니라 scene JSON이라 exportToSvg를 호출하는 뷰어
+            // 페이지로 감싸야 한다(ExcalidrawRenderer.kt, 실기기 검증 완료 2026-08-30).
+            val htmlToLoad = remember(media.id) { resolveWebViewHtml(media.filename, mimeType, text) }
+            if (htmlToLoad != null) {
                 androidx.compose.ui.viewinterop.AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->

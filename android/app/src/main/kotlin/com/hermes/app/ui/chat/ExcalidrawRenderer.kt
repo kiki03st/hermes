@@ -22,8 +22,8 @@ fun isExcalidrawFile(filename: String): Boolean = filename.endsWith(".excalidraw
  * 돌려준다(공식 문서 확인) — 비동기 IIFE로 감싸서 최대한 넓은 WebView 버전과 호환되게
  * 한다(top-level await 대신).
  *
- * 실기기 미검증 상태다 — CDN import가 WebView에서 실제로 동작하는지 아직 확인 못 했다.
- * 렌더링 실패 시 화면에 에러 문구가 뜨게 만들어뒀다(무한 빈 화면 대신).
+ * 실기기 검증 완료(2026-08-30) — CDN import + exportToSvg 렌더링 정상 작동함. 렌더링
+ * 실패 시엔 화면에 에러 문구가 뜨게 만들어뒀다(무한 빈 화면 대신).
  *
  * [sceneJson] 안의 `</script`는 그대로 두면 HTML 파서가 스크립트 태그를 조기 종료시켜
  * 페이지를 깨뜨린다 — 있을 가능성은 낮지만(엘리먼트 텍스트 안에 우연히 들어갈 수 있음)
@@ -67,4 +67,16 @@ fun buildExcalidrawViewerHtml(sceneJson: String): String {
         |</body>
         |</html>
     """.trimMargin()
+}
+
+/** [filename]/[mimeType]가 WebView로 렌더링할 대상이면(실제로 그려지는 시각 콘텐츠 —
+ * architecture-diagram의 완성된 HTML, excalidraw의 scene JSON) 로드할 HTML을 만들어
+ * 돌려준다. 그 외(md/txt/csv/pdf 등 순수 문서)는 null — 호출부가 `FileChip`으로
+ * 떨어뜨린다. `MediaImage`(버블 인라인)와 `TextPreviewDialog`(전체화면) 둘 다 이걸
+ * 공유해서 판단 로직이 갈라지지 않게 한다(설계 문서: 2026-08-30, "탭해야만 보이는 게
+ * 아니라 이미지처럼 바로 보이면 좋겠다"는 요청 반영). */
+fun resolveWebViewHtml(filename: String, mimeType: String, rawText: String): String? = when {
+    isExcalidrawFile(filename) -> buildExcalidrawViewerHtml(rawText)
+    isRenderableHtml(mimeType) -> rawText
+    else -> null
 }

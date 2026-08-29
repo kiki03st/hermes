@@ -1,5 +1,6 @@
 package com.hermes.app.ui.chat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,5 +44,29 @@ class ExcalidrawRendererTest {
 
         assertFalse(html.contains("</script><script>alert(1)"))
         assertTrue(html.contains("<\\/script><script>alert(1)"))
+    }
+
+    @Test
+    fun `resolveWebViewHtml wraps excalidraw scenes through the exportToSvg viewer`() {
+        val scene = """{"elements": []}"""
+
+        val html = resolveWebViewHtml("diagram.excalidraw", "application/json", scene)
+
+        assertTrue(html != null && html.contains("import { exportToSvg }"))
+    }
+
+    @Test
+    fun `resolveWebViewHtml passes html mime content through unchanged`() {
+        val page = "<!DOCTYPE html><html><body>hi</body></html>"
+
+        val html = resolveWebViewHtml("diagram.html", "text/html", page)
+
+        assertEquals(page, html)
+    }
+
+    @Test
+    fun `resolveWebViewHtml returns null for plain documents`() {
+        assertEquals(null, resolveWebViewHtml("notes.md", "text/markdown", "# hi"))
+        assertEquals(null, resolveWebViewHtml("data.json", "application/json", "{}"))
     }
 }
