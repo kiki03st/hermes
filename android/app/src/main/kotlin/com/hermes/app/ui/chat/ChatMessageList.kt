@@ -289,22 +289,11 @@ private fun FileChip(media: ChatMedia, bytes: ByteArray, onClick: (ChatMedia) ->
  * 받는다). 오버레이가 모든 터치를 먼저 받으니 WebView 자체 터치 핸들러는 필요 없다. */
 @Composable
 private fun InlineWebView(html: String, contentDescription: String, onClick: () -> Unit) {
-    val inlineHtml = remember(html) { stripViewportMetaForInlinePreview(html) }
     Box(modifier = Modifier.widthIn(max = 280.dp).height(220.dp)) {
         androidx.compose.ui.viewinterop.AndroidView(
             modifier = Modifier.matchParentSize(),
-            factory = { ctx ->
-                android.webkit.WebView(ctx).apply {
-                    settings.javaScriptEnabled = true
-                    // 데스크톱 폭 기준 절대좌표로 그려진 페이지(architecture-diagram 등)를
-                    // 작은 인라인 뷰에 통째로 축소해서 보여준다 — 안 하면 실제 콘텐츠가
-                    // 화면 밖으로 벗어나 배경색만 보인다(실측 버그, 2026-08-30, "까만 빈
-                    // 박스"). viewport 메타 태그를 지운 [inlineHtml]과 짝이어야 먹힌다.
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                }
-            },
-            update = { webView -> webView.loadDataWithBaseURL(null, inlineHtml, "text/html", "utf-8", null) },
+            factory = { ctx -> android.webkit.WebView(ctx).apply { settings.javaScriptEnabled = true } },
+            update = { webView -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null) },
         )
         Box(modifier = Modifier.matchParentSize().clickable(onClick = onClick))
     }
